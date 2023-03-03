@@ -34,10 +34,6 @@ from multiprocessing.dummy import Pool as ThreadPool
 from . import document_vars, tools
 
 try:
-    from . import cstagger
-except ImportError:
-    cstagger = tools.ImportFailed('cstagger', "This module is required to use stagger_kind='cstagger'.")
-try:
     from . import stagger
 except ImportError:
     stagger = tools.ImportFailed('stagger')
@@ -54,8 +50,8 @@ YZ_FROM_X = dict(x=('y', 'z'), y=('z', 'x'), z=('x', 'y'))  # right-handed coord
 EPSILON = 1.0e-20   # small number which is added in denominators of some operations.
 
 
-# we need to convert to float32 before doing cstagger.do.
-# not sure why this conversion isnt done in the cstagger method, but it is a bit
+# we need to convert to float32 before doing stagger.do.
+# not sure why this conversion isnt done in the stagger method, but it is a bit
 # painful to change the method itself (required re-installing helita for me) so we will
 # instead just change our calls to the method here. -SE Apr 22 2021
 CSTAGGER_TYPES = ['float32']  # these are the allowed types
@@ -63,7 +59,7 @@ CSTAGGER_TYPES = ['float32']  # these are the allowed types
 
 def do_stagger(arr, operation, default_type=CSTAGGER_TYPES[0], obj=None):
     '''does stagger of arr.
-    For stagger_kind='cstagger', first does some preprocessing:
+    For stagger_kind='fifth', first does some preprocessing:
       - ensure arr is the correct type, converting if necessary.
         if type conversion is necessary, convert to default_type.
       - TODO: check _can_interp here, instead of separately.
@@ -72,35 +68,20 @@ def do_stagger(arr, operation, default_type=CSTAGGER_TYPES[0], obj=None):
       - call stagger via obj: obj.stagger.do(arr, operation)
     '''
     kind = getattr(obj, 'stagger_kind', stagger.DEFAULT_STAGGER_KIND)
-    if kind == 'cstagger':  # use cstagger routine.
-        arr = np.array(arr, copy=False)     # make numpy array, if necessary.
-        if arr.dtype not in CSTAGGER_TYPES:  # if necessary,
-            arr = arr.astype(default_type)      # convert type
-        return cstagger.do(arr, operation)  # call the original cstagger function
-    else:                  # use stagger routine.
-        assert obj is not None, f'obj must be provided to use stagger, with stagger_kind = {stagger_kind}.'
-        return obj.stagger.do(arr, operation)
-
-
-do_cstagger = do_stagger   # << alias, for backwards compatibility.
+    # use stagger routine.
+    assert obj is not None, f'obj must be provided to use stagger, with stagger_kind = {stagger_kind}.'
+    return obj.stagger.do(arr, operation)
 
 
 def _can_interp(obj, axis, warn=True):
     '''return whether we can interpolate. Make warning if we can't.
-    must check before doing any cstagger operation.
+    must check before doing any stagger operation.
     pythonic stagger methods (e.g. 'numba', 'numpy') make this check on their own.
     '''
     if not obj.do_stagger:  # this is True by default; if it is False we assume that someone
         return False       # intentionally turned off interpolation. So we don't make warning.
     kind = getattr(obj, 'stagger_kind', stagger.DEFAULT_STAGGER_KIND)
-    if kind != 'cstagger':
-        return True   # we can let the pythonic methods check _can_interp on their own.
-    if not getattr(obj, 'cstagger_exists', False):
-        if obj.verbose:
-            warnmsg = 'interpolation requested, but cstagger not initialized, for obj={}! '.format(object.__repr__(obj)) +\
-                'We will skip the interpolation, and instead return the original value.'
-            warnings.warn(warnmsg)  # warn user we will not be interpolating! (cstagger doesn't exist)
-        return False
+
     if not getattr(obj, 'n'+axis, 0) >= 5:
         if obj.verbose:
             warnmsg = 'requested interpolation in {x:} but obj.n{x:} < 5. '.format(x=axis) +\

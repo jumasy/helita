@@ -92,7 +92,6 @@ class Cipmocct:
 
         self.transunits = False
 
-        self.cstagop = False  # This will not allow to use cstagger from Bifrost in load
         self.hion = False  # This will not allow to use HION from Bifrost in load
         self.genvar()
 

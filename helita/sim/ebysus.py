@@ -62,11 +62,6 @@ from .load_mf_quantities import load_mf_quantities
 from .load_quantities import load_quantities
 from .units import U_TUPLE, UNI, UNI_rho, UNI_speed, Usym, UsymD
 
-try:
-    from . import cstagger
-except ImportError:
-    cstagger = tools.ImportFailed('cstagger', "This module is required to use stagger_kind='cstagger'.")
-
 # import external public modules
 import numpy as np
 
@@ -495,18 +490,7 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
                 self.variables['metadata'] = self._metadata()
 
         rdt = self.r.dtype
-        if self.stagger_kind == 'cstagger':
-            if (self.nz > 1):
-                cstagger.init_stagger(self.nz, self.dx, self.dy, self.z.astype(rdt),
-                                      self.zdn.astype(rdt), self.dzidzup.astype(rdt),
-                                      self.dzidzdn.astype(rdt))
-                self.cstagger_exists = True   # we can use cstagger methods!
-            else:
-                self.cstagger_exists = False
-                #cstagger.init_stagger_mz1(self.nz, self.dx, self.dy, self.z.astype(rdt))
-                # self.cstagger_exists = True  # we must avoid using cstagger methods.
-        else:
-            self.cstagger_exists = True
+
 
     ## INTROSPECTION ##
     def _metadata(self, none=None, with_nfluid=2):

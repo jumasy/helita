@@ -1101,7 +1101,7 @@ def get_wavemode(obj, quant, WAVE_QUANT=None, **kwargs):
     if quant == 'alf':
         uperb = obj.get_var('uperb')
         uperbVect = uperb * unitB
-        # cross product (uses cstagger bc no variable gets uperbVect)
+        # cross product (uses stagger bc no variable gets uperbVect)
         curlX = (do_stagger(do_stagger(uperbVect[2], 'ddydn', obj=obj), 'yup', obj=obj) -
                  do_stagger(do_stagger(uperbVect[1], 'ddzdn', obj=obj), 'zup', obj=obj))
         curlY = (-do_stagger(do_stagger(uperbVect[2], 'ddxdn', obj=obj), 'xup', obj=obj)
@@ -1380,7 +1380,7 @@ def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
 # default
 _AMB_QUANT = ('AMB_QUANT',
               ['uambx', 'uamby', 'uambz', 'ambx', 'amby', 'ambz',
-               'eta_amb1', 'eta_amb2', 'eta_amb3', 'eta_amb4', 'eta_amb5',
+               'eta_amb', 'eta_amb2', 'eta_amb3', 'eta_amb4', 'eta_amb5',
                'nchi', 'npsi', 'nchi_red', 'npsi_red',
                'rchi', 'rpsi', 'rchi_red', 'rpsi_red', 'alphai', 'betai']
               )
@@ -1403,7 +1403,7 @@ def get_ambparam(obj, quant, AMB_QUANT=None, **kwargs):
         docvar('ambx', "component x of the ambipolar term")
         docvar('amby', "component y of the ambipolar term")
         docvar('ambz', "component z of the ambipolar term")
-        docvar('eta_amb1', "ambipolar diffusion using nu_ni")
+        docvar('eta_amb', "ambipolar diffusion using nu_ni")
         docvar('eta_amb2', "ambipolar diffusion using nu_in")
         docvar('eta_amb3', "ambipolar diffusion using nu_ni_max and rion_nomag")
         docvar('eta_amb4', "ambipolar diffusion using Yakov for low ionization regime, Eq (20) (ref{Faraday_corr})")
@@ -1430,7 +1430,7 @@ def get_ambparam(obj, quant, AMB_QUANT=None, **kwargs):
         u_b = obj.uni.u_b
 
     axis = quant[-1]
-    if quant == 'eta_amb1':  # version from other
+    if quant == 'eta_amb':  # version from other
         result = (obj.get_var('rneu') / obj.get_var('rho') * u_b)**2
         result /= (4.0 * obj.uni.pi * obj.get_var('nu_ni', **kwargs) + 1e-20)
         result *= obj.get_var('b2')  # / 1e7
@@ -1906,6 +1906,7 @@ def ionpopulation(obj, rho, nel, tg, elem='h', lvl='1', dens=True, **kwargs):
               "Units set to 'standard' Bifrost units.")
   '''
     uni = obj.uni
+    print(uni)
 
     totconst = 2.0 * uni.pi * uni.m_electron * uni.k_b / \
         uni.hplanck / uni.hplanck

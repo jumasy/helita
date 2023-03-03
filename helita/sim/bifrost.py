@@ -61,10 +61,10 @@ class BifrostData():
         if enabled, operations will take more time but produce more accurate results.
     stagger_kind - string, optional
         which method to use for performing stagger operations, if do_stagger.
-        options are 'cstagger', 'numba' (default), 'numpy'. See stagger.py for details.
+        options are 'first', 'fifth' (default), 'fifth improved'. See stagger.py for details.
         More options may be defined later. Set stagger_kind='' to see all options.
     lowbus  - bool, optional
-        Use True only if data is too big to load. It will do cstagger
+        Use True only if data is too big to load. It will do stagger
         operations layer by layer using threads (slower).
     numThreads - integer, optional
         number of threads for certain operations that use parallelism.
@@ -636,17 +636,7 @@ class BifrostData():
                         print('(WWW) init_vars: could not read '
                               'variable {} due to {}'.format(var, err))
         rdt = self.r.dtype
-        if self.stagger_kind == 'cstagger':
-            if (self.nz > 1):
-                cstagger.init_stagger(self.nz, self.dx, self.dy, self.z.astype(rdt),
-                                      self.zdn.astype(rdt), self.dzidzup.astype(rdt),
-                                      self.dzidzdn.astype(rdt))
-                self.cstagger_exists = True   # we can use cstagger methods!
-            else:
-                cstagger.init_stagger_mz1d(self.nz, self.dx, self.dy, self.z.astype(rdt))
-                self.cstagger_exists = True  # we must avoid using cstagger methods.
-        else:
-            self.cstagger_exists = True
+
 
     ## GET VARIABLE ##
     def __call__(self, var, *args, **kwargs):
@@ -660,7 +650,7 @@ class BifrostData():
         if iinum is a slice, use self.nx (or self.nzb, for x='z') to determine xLength.
 
         Also, if we end up using a non-None slice, disable stagger.
-        TODO: maybe we can leave do_stagger=True if stagger_kind != 'cstagger' ?
+        TODO: maybe we can leave do_stagger=True?
 
         Parameters
         ----------
@@ -1259,9 +1249,6 @@ class BifrostData():
             Bx = do_stagger(self.bx, 'xup', obj=self)[sx, sy, sz]
             By = do_stagger(self.by, 'yup', obj=self)[sx, sy, sz]
             Bz = do_stagger(self.bz, 'zup', obj=self)[sx, sy, sz]
-            # Bx = cstagger.xup(self.bx)[sx, sy, sz]
-            # By = cstagger.yup(self.by)[sx, sy, sz]
-            # Bz = cstagger.zup(self.bz)[sx, sy, sz]
             # Change sign of Bz (because of height scale) and By
             # (to make right-handed system)
             Bx = Bx * ub
@@ -1271,12 +1258,11 @@ class BifrostData():
             Bx = By = Bz = None
 
         vz = do_stagger(self.pz, 'zup', obj=self)[sx, sy, sz] / rho
-        # vz = cstagger.zup(self.pz)[sx, sy, sz] / rho
         vz *= -uv
         if write_all_v:
-            vx = cstagger.xup(self.px)[sx, sy, sz] / rho
+            vx = do_stagger(self.px, 'xup', obj=self)[sx, sy, sz] / rho
             vx *= uv
-            vy = cstagger.yup(self.py)[sx, sy, sz] / rho
+            vy = do_stagger(self.py, 'yup', obj=self)[sx, sy, sz] / rho
             vy *= -uv
         else:
             vx = None
@@ -1343,7 +1329,6 @@ class BifrostData():
         rho = self.r[sx, sy, sz]
         # Change sign of vz (because of height scale) and vy (to make
         # right-handed system)
-        # vx = cstagger.xup(self.px)[sx, sy, sz] / rho
         vx = do_stagger(self.px, 'xup', obj=self)[sx, sy, sz] / rho
         vx *= uv
         vy = do_stagger(self.py, 'yup', obj=self)[sx, sy, sz] / rho
@@ -2947,9 +2932,6 @@ def bifrost2d_to_rh15d(snaps, outfile, file_root, meshfile, fdir, writeB=False,
     z = data.z[sz] * (-ul)
 
     data.r.dtype
-    # cstagger.init_stagger(data.nz, data.dx, data.dy, data.z.astype(rdt),
-    #                      data.zdn.astype(rdt), data.dzidzup.astype(rdt),
-    #                      data.dzidzdn.astype(rdt))
 
     for i, s in enumerate(snaps):
         data.set_snap(s)
