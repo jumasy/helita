@@ -1,12 +1,24 @@
+# import builtin modules
 import os
+import ast
+import time
+import weakref
+import warnings
+import functools
+import collections
+from glob import glob
 
+# import external public modules
 import numpy as np
+from scipy import interpolate
+from scipy.ndimage import map_coordinates
 
-from . import document_vars
 from .bifrost import Rhoeetab
 from .load_arithmetic_quantities import *
 from .load_quantities import *
 from .tools import *
+
+from . import document_vars, file_memory, load_fromfile_quantities, stagger, tools, units
 
 
 class MuramAtmos:
@@ -42,7 +54,7 @@ class MuramAtmos:
             self.dtype = '>' + dtype
         else:
             self.dtype = '<' + dtype
-        self.uni = Muram_units()
+        self.uni = Muram_units(filename=None, parent=self)
         self.read_header("%s/Header%s" % (fdir, template))
         #self.read_atmos(fdir, template)
         # Snapshot number
@@ -55,10 +67,12 @@ class MuramAtmos:
         self.transunits = False
         self.lowbus = False
 
-        self.cstagop = False  # This will not allow to use cstagger from Bifrost in load
         self.do_stagger = False
         self.hion = False  # This will not allow to use HION from Bifrost in load
+        self.heion = False
         tabfile = os.path.join(self.fdir, 'tabparam.in')
+
+        self.cross_sect = cross_sect_for_obj(self)
 
         if os.access(tabfile, os.R_OK):
             self.rhoee = Rhoeetab(tabfile=tabfile, fdir=fdir, radtab=False)
@@ -67,6 +81,11 @@ class MuramAtmos:
 
         document_vars.create_vardict(self)
         document_vars.set_vardocs(self)
+
+    size = property(lambda self: (self.xLength * self.yLength * self.zLength))
+    ndim = property(lambda self: 3)
+    shape = property(lambda self: (self.xLength, self.yLength, self.zLength))
+
 
     def read_header(self, headerfile):
         tmp = np.loadtxt(headerfile)
@@ -259,13 +278,13 @@ class MuramAtmos:
         # Try to load "regular" quantities
         # if val is None:
         val = load_quantities(self, var, PLASMA_QUANT='', CYCL_RES='',
-                              COLFRE_QUANT='', COLFRI_QUANT='', IONP_QUANT='',
+                              COLFRE_QUANT=None, COLFRI_QUANT=None, IONP_QUANT=None,
                               EOSTAB_QUANT=['ne', 'tau'], TAU_QUANT='', DEBYE_LN_QUANT='',
-                              CROSTAB_QUANT='', COULOMB_COL_QUANT='', AMB_QUANT='',
-                              HALL_QUANT='', BATTERY_QUANT='', SPITZER_QUANT='',
-                              KAPPA_QUANT='', GYROF_QUANT='', WAVE_QUANT='',
-                              FLUX_QUANT='', CURRENT_QUANT='', COLCOU_QUANT='',
-                              COLCOUMS_QUANT='', COLFREMX_QUANT='', **kwargs)
+                              CROSTAB_QUANT=None, COULOMB_COL_QUANT=None, AMB_QUANT=None,
+                              HALL_QUANT=None, BATTERY_QUANT=None, SPITZER_QUANT='',
+                              KAPPA_QUANT='', GYROF_QUANT=None, WAVE_QUANT='',
+                              FLUX_QUANT='', CURRENT_QUANT=None, COLCOU_QUANT=None,
+                              COLCOUMS_QUANT=None, COLFREMX_QUANT=None, **kwargs)
 
         # Try to load "arithmetic" quantities.
         if val is None:
@@ -357,6 +376,16 @@ class MuramAtmos:
             # self.data = self._get_var_postprocess(self.data, var=var, original_slice=original_slice)
 
         return self.data
+
+    ## GET VARIABLE ##
+    def __call__(self, var, *args, **kwargs):
+        '''equivalent to self.get_var(var, *args, **kwargs)'''
+        __tracebackhide__ = True  # hide this func from error traceback stack
+        return self.get_var(var, *args, **kwargs)
+
+    def zero(self, **kw__np_zeros):
+        '''return np.zeros() with shape equal to shape of result of get_var()'''
+        return np.zeros(self.shape, **kw__np_zeros)
 
     def _get_var_postprocess(self, val, var='', original_slice=[slice(None) for x in ('x', 'y', 'z')]):
         '''does post-processing for get_var.
@@ -670,23 +699,729 @@ class MuramAtmos:
                   origin=origin, z_tau51m=z_tau51m)
 
 
-class Muram_units(object):
+    def set_domain_iiaxis(self, iinum=None, iiaxis='x'):
+        """
+        Sets iix=iinum and xLength=len(iinum). (x=iiaxis)
+        if iinum is a slice, use self.nx (or self.nzb, for x='z') to determine xLength.
 
-    def __init__(self, verbose=False):
+        Also, if we end up using a non-None slice, disable stagger.
+        TODO: maybe we can leave do_stagger=True?
+
+        Parameters
+        ----------
+        iinum - slice, int, list, array, or None (default)
+            Slice to be taken from get_var quantity in that axis (iiaxis)
+            int --> convert to slice(iinum, iinum+1) (to maintain dimensions of output)
+            None --> don't change existing self.iix (or iiy or iiz).
+                     if it doesn't exist, set it to slice(None).
+            To set existing self.iix to slice(None), use iinum=slice(None).
+        iiaxis - string
+            Axis from which the slice will be taken ('x', 'y', or 'z')
+
+        Returns True if any changes were made, else None.
+        """
+        iix = 'ii' + iiaxis
+        if hasattr(self, iix):
+            # if iinum is None or self.iix == iinum, do nothing and return nothing.
+            if (iinum is None):
+                return None
+            elif np.all(iinum == getattr(self, iix)):
+                return None
+
+        if iinum is None:
+            iinum = slice(None)
+
+        if not np.array_equal(iinum, slice(None)):
+            # smash self.variables. Necessary, since we will change the domain size.
+            self.variables = {}
+
+        if isinstance(iinum, (int, np.integer)):  # we convert to slice, to maintain dimensions of output.
+            iinum = slice(iinum, iinum+1)  # E.g. [0,1,2][slice(1,2)] --> [1]; [0,1,2][1] --> 1
+
+        # set self.iix
+        setattr(self, iix, iinum)
+        if self.verbose:
+            # convert iinum to string that wont be super long (in case iinum is a long list)
+            try:
+                assert len(iinum) > 20
+            except (TypeError, AssertionError):
+                iinumprint = iinum
+            else:
+                iinumprint = 'list with length={:4d}, min={:4d}, max={:4d}, x[1]={:2d}'
+                iinumprint = iinumprint.format(len(iinum), min(iinum), max(iinum), iinum[1])
+            # print info.
+            print('(set_domain) {}: {}'.format(iix, iinumprint),
+                  whsp*4, end="\r", flush=True)
+
+        # set self.xLength
+        if isinstance(iinum, slice):
+            nx = getattr(self, 'n'+iiaxis)
+            indSize = len(range(*iinum.indices(nx)))
+        else:
+            iinum = np.asarray(iinum)
+            if iinum.dtype == 'bool':
+                indSize = np.sum(iinum)
+            else:
+                indSize = np.size(iinum)
+        setattr(self, iiaxis + 'Length', indSize)
+
+        return True
+
+    def set_domain_iiaxes(self, iix=None, iiy=None, iiz=None, internal=False):
+        '''sets iix, iiy, iiz, xLength, yLength, zLength.
+        iix: slice, int, list, array, or None (default)
+            Slice to be taken from get_var quantity in x axis
+            None --> don't change existing self.iix.
+                     if self.iix doesn't exist, set it to slice(None).
+            To set existing self.iix to slice(None), use iix=slice(None).
+        iiy, iiz: similar to iix.
+        internal: bool (default: False)
+            if internal and self.do_stagger, don't change slices.
+            internal=True inside get_var.
+
+        updates x, y, z, dx1d, dy1d, dz1d afterwards, if any domains were changed.
+        '''
+        if internal and self.do_stagger:
+            # we slice at the end, only. For now, set all to slice(None)
+            slices = (slice(None), slice(None), slice(None))
+        else:
+            slices = (iix, iiy, iiz)
+
+        any_domain_changes = False
+        for x, iix in zip(AXES, slices):
+            domain_changed = self.set_domain_iiaxis(iix, x)
+            any_domain_changes = any_domain_changes or domain_changed
+
+        # update x, y, z, dx1d, dy1d, dz1d appropriately.
+        #if any_domain_changes:
+        #    self.__read_mesh(self.meshfile, firstime=False)
+
+    def write_mesh_file(self, meshfile='untitled_mesh.mesh', u_l=None):
+        '''writes mesh to meshfilename.
+        mesh will be the mesh implied by self,
+        using values for x, y, z, dx1d, dy1d, dz1d, indexed by iix, iiy, iiz.
+
+        u_l: None, or a number
+            cgs length units (length [simulation units] * u_l = length [cm]),
+                for whoever will be reading the meshfile.
+            None -> use length units of self.
+
+        Returns abspath to generated meshfile.
+        '''
+        if not meshfile.endswith('.mesh'):
+            meshfile += '.mesh'
+        if u_l is None:
+            scaling = 1.0
+        else:
+            scaling = self.uni.uni['l'] / u_l
+        kw_x = {x: getattr(self,    x) * scaling for x in AXES}
+        kw_dx = {'d'+x: getattr(self, 'd'+x+'1d') / scaling for x in AXES}
+        kw_nx = {'n'+x: getattr(self, x+'Length') for x in AXES}
+        kw_mesh = {**kw_x, **kw_nx, **kw_dx}
+        Create_new_br_files().write_mesh(**kw_mesh, meshfile=meshfile)
+        return os.path.abspath(meshfile)
+
+    write_meshfile = write_mesh_file  # alias
+
+
+def cross_sect_for_obj(obj=None):
+    '''return function which returns Cross_sect with self.obj=obj.
+    obj: None (default) or an object
+        None -> does nothing; ignore this parameter.
+        else -> improve time-efficiency by saving data from cross_tab files
+                into memory of obj (save in obj._memory_read_cross_txt).
+                Also, use fdir=obj.fdir, unless fdir is entered explicitly.
+    '''
+    @functools.wraps(Cross_sect)
+    def _init_cross_sect(cross_tab=None, fdir=None, *args__Cross_sect, **kw__Cross_sect):
+        if fdir is None:
+            fdir = getattr(obj, 'fdir', '.')
+        return Cross_sect(cross_tab, fdir, *args__Cross_sect, **kw__Cross_sect, obj=obj)
+    return _init_cross_sect
+
+## Tools for making cross section table such that colfreq is independent of temperature ##
+
+
+def constant_colfreq_cross(tg0, Q0, tg=range(1000, 400000, 100), T_to_eV=lambda T: T / 11604):
+    '''makes values for constant collision frequency vs temperature cross section table.
+    tg0, Q0:
+        enforce Q(tg0) = Q0.
+    tg: array of values for temperature.
+        (recommend: 1000 to 400000, with intervals of 100.)
+    T_to_eV: function
+        T_to_eV(T) --> value in eV.
+
+    colfreq = consts * Q(tg) * sqrt(tg).
+        For constant colfreq:
+        Q(tg1) sqrt(tg1) = Q(tg0) sqrt(tg0)
+
+    returns dict of arrays. keys: 'E' (for energy in eV), 'T' (for temperature), 'Q' (for cross)
+    '''
+    tg = np.asarray(tg)
+    E = T_to_eV(tg)
+    Q = Q0 * np.sqrt(tg0) / np.sqrt(tg)
+    return dict(E=E, T=tg, Q=Q)
+
+
+def cross_table_str(E, T, Q, comment=''):
+    '''make a string for the table for cross sections.
+    put comment at top of file if provided.
+    '''
+    header = ''
+    if len(comment) > 0:
+        if not comment.startswith(';'):
+            comment = ';' + comment
+        header += comment + '\n'
+    header += '\n'.join(["",
+                         "; 1 atomic unit of square distance = 2.80e-17 cm^2",
+                         "; 1eV = 11604K",
+                         "",
+                         "2.80e-17",
+                         "",
+                         "",
+                         ";   E            T          Q11  ",
+                         ";  (eV)         (K)        (a.u.)",
+                         "",
+                         "",
+                         ])
+    lines = []
+    for e, t, q in zip(E, T, Q):
+        lines.append('{:.6f}       {:d}       {:.3f}'.format(e, t, q))
+    return header + '\n'.join(lines)
+
+
+def constant_colfreq_cross_table_str(tg0, Q0, **kw):
+    '''make a string for a cross section table which will give constant collision frequency (vs tg).'''
+    if 'comment' in kw:
+        comment = kw.pop('comment')
+    else:
+        comment = '\n'.join(['; This table provides cross sections such that',
+                             '; the collision frequency will be independent of temperature,',
+                             '; assuming the functional form colfreq proportional to sqrt(T).',
+                             ])
+    ccc = constant_colfreq_cross(tg0, Q0, **kw)
+    result = cross_table_str(**ccc, comment=comment)
+    return result
+
+
+@file_memory.remember_and_recall('_memory_read_cross_txt', kw_mem=['kelvin'])
+def read_cross_txt(filename, firstime=False, kelvin=True):
+    ''' Reads IDL-formatted (command style) ascii file into dictionary.
+    tg will be converted to Kelvin, unless kelvin==False.
+    '''
+    li = 0
+    params = {}
+    # go through the file, add stuff to dictionary
+    with open(filename) as fp:
+        for line in fp:
+            # ignore empty lines and comments
+            line = line.strip()
+            if len(line) < 1:
+                li += 1
+                continue
+            if line[0] == ';':
+                li += 1
+                continue
+            line = line.split(';')[0].split()
+            if (len(line) == 1):
+                params['crossunits'] = float(line[0].strip())
+                li += 1
+                continue
+            elif not ('crossunits' in params.keys()):
+                print('(WWW) read_cross: line %i is invalid, missing crossunits, file %s' % (li, filename))
+
+            if (len(line) < 2):
+                if (firstime):
+                    print('(WWW) read_cross: line %i is invalid, skipping, file %s' % (li, filename))
+                li += 1
+                continue
+            # force lowercase because IDL is case-insensitive
+            temp = line[0].strip()
+            cross = line[2].strip()
+
+            # instead of the insecure 'exec', find out the datatypes
+            if ((temp.upper().find('E') >= 0) or (temp.find('.') >= 0)):
+                # float type
+                temp = float(temp)
+            else:
+                # int type
+                try:
+                    temp = int(temp)
+                except Exception:
+                    if (firstime):
+                        print('(WWW) read_cross: could not find datatype in '
+                              'line %i, skipping' % li)
+                    li += 1
+                    continue
+            if not ('tg' in params.keys()):
+                params['tg'] = temp
+            else:
+                params['tg'] = np.append(params['tg'], temp)
+
+            if ((cross.upper().find('E') >= 0) or (cross.find('.') >= 0)):
+                # float type
+                cross = float(cross)
+            else:
+                # int type
+                try:
+                    cross = int(cross)
+                except Exception:
+                    if (firstime):
+                        print('(WWW) read_cross: could not find datatype in '
+                              'line %i, skipping' % li)
+                    li += 1
+                    continue
+            if not ('el' in params.keys()):
+                params['el'] = cross
+            else:
+                params['el'] = np.append(params['el'], cross)
+
+            if len(line) > 2:
+                cross = line[2].strip()
+
+                if ((cross.upper().find('E') >= 0) or (cross.find('.') >= 0)):
+                    # float type
+                    cross = float(cross)
+                else:
+                    # int type
+                    try:
+                        cross = int(cross)
+                    except Exception:
+                        if (firstime):
+                            print('(WWW) read_cross: could not find datatype'
+                                  'in line %i, skipping' % li)
+                        li += 1
+                        continue
+                if not ('mt' in params.keys()):
+                    params['mt'] = cross
+                else:
+                    params['mt'] = np.append(params['mt'], cross)
+
+            if len(line) > 3:
+                cross = line[3].strip()
+
+                if ((cross.upper().find('E') >= 0) or (cross.find('.') >= 0)):
+                    # float type
+                    cross = float(cross)
+                else:
+                    # int type
+                    try:
+                        cross = int(cross)
+                    except Exception:
+                        if (firstime):
+                            print('(WWW) read_cross: could not find datatype'
+                                  'in line %i, skipping' % li)
+                        li += 1
+                        continue
+                if not hasattr(params, 'vi'):
+                    params['vi'] = cross
+                else:
+                    params['vi'] = np.append(params['vi'], cross)
+
+            if len(line) > 4:
+                cross = line[4].strip()
+
+                if ((cross.upper().find('E') >= 0) or (cross.find('.') >= 0)):
+                    # float type
+                    cross = float(cross)
+                else:
+                    # int type
+                    try:
+                        cross = int(cross)
+                    except Exception:
+                        if (firstime):
+                            print('(WWW) read_cross: could not find datatype'
+                                  'in line %i, skipping' % li)
+                        li += 1
+                        continue
+                if not hasattr(params, 'se'):
+                    params['se'] = cross
+                else:
+                    params['se'] = np.append(params['se'], cross)
+            li += 1
+
+    # convert to kelvin
+    if kelvin:
+        params['tg'] *= Muram_units(verbose=False).ev_to_k
+
+    return params
+
+
+def calc_grph(abundances, atomic_weights):
+    """
+    Calculate grams per hydrogen atom, given a mix of abundances
+    and respective atomic weights.
+
+    Parameters
+    ----------
+    abundances : 1D array
+        Element abundances relative to hydrogen in log scale,
+        where hydrogen is defined as 12.
+    atomic_weights : 1D array
+        Atomic weights for each element in atomic mass units.
+
+    Returns
+    -------
+    grph : float
+        Grams per hydrogen atom.
+    """
+    from astropy.constants import u as amu
+    linear_abundances = 10.**(abundances - 12.)
+    masses = atomic_weights * amu.to_value('g')
+    return np.sum(linear_abundances * masses)
+
+
+def subs2grph(subsfile):
+    """
+    Extract abundances and atomic masses from subs.dat, and calculate
+    the number of grams per hydrogen atom.
+
+    Parameters
+    ----------
+    subsfile : str
+        File name of subs.dat.
+
+    Returns
+    -------
+    grph : float
+        Grams per hydrogen atom.
+    """
+    f = open(subsfile, 'r')
+    nspecies = np.fromfile(f, count=1, sep=' ', dtype='i')[0]
+    f.readline()  # second line not important
+    ab = np.fromfile(f, count=nspecies, sep=' ', dtype='f')
+    am = np.fromfile(f, count=nspecies, sep=' ', dtype='f')
+    f.close()
+    return calc_grph(ab, am)
+
+
+def find_first_match(name, path, incl_path=False):
+    '''
+    This will find the first match,
+    name : string, e.g., 'patern*'
+    incl_root: boolean, if true will add full path, otherwise, the name.
+    path : sring, e.g., '.'
+    '''
+    originalpath = os.getcwd()
+    os.chdir(path)
+    for file in glob(name):
+        if incl_path:
+            os.chdir(originalpath)
+            return os.path.join(path, file)
+        else:
+            os.chdir(originalpath)
+            return file
+    os.chdir(originalpath)
+
+
+class Cross_sect:
+    """
+    Reads data from Bifrost collisional cross section tables.
+
+    Parameters
+    ----------
+    cross_tab - string or array of strings
+        File names of the ascii cross table files.
+    fdir - string, optional
+        Directory where simulation files are. Must be a real path.
+    verbose - bool, optional
+        If True, will print out more diagnostic messages
+    dtype - string, optional
+        Data type for reading variables. Default is 32 bit float.
+    kelvin - bool (default True)
+        Whether to load data in Kelvin. (uses eV otherwise)
+
+    Examples
+    --------
+        a = cross_sect(['h-h-data2.txt','h-h2-data.txt'], fdir="/data/cb24bih")
+
+    """
+
+    def __init__(self, cross_tab=None, fdir=os.curdir, dtype='f4', verbose=None, kelvin=True, obj=None):
+        '''
+        Loads cross section tables and calculates collision frequencies and
+        ambipolar diffusion.
+
+        parameters:
+        cross_tab: None or list of strings
+            None -> use default cross tab list of strings.
+            else -> treat each string as the name of a cross tab file.
+        fdir: str (default '.')
+            directory of files (prepend to each filename in cross_tab).
+        dtype: default 'f4'
+            sets self.dtype. aside from that, internally does NOTHING.
+        verbose: None (default) or bool.
+            controls verbosity. presently, internally does NOTHING.
+            if None, use obj.verbose if possible, else use False (default)
+        kelvin - bool (default True)
+            Whether to load data in Kelvin. (uses eV otherwise)
+        obj: None (default) or an object
+            None -> does nothing; ignore this parameter.
+            else -> improve time-efficiency by saving data from cross_tab files
+                    into memory of obj (save in obj._memory_read_cross_txt).
+        '''
+        self.fdir = fdir
+        self.dtype = dtype
+        if verbose is None:
+            verbose = False if obj is None else getattr(obj, 'verbose', False)
+        self.verbose = verbose
+        self.kelvin = kelvin
+        self.units = {True: 'K', False: 'eV'}[self.kelvin]
+        # save pointer to obj. Use weakref to help ensure we don't create a circular reference.
+        self.obj = (lambda: None) if (obj is None) else weakref.ref(obj)  # self.obj() returns obj.
+        # read table file and calculate parameters
+        if cross_tab is None:
+            cross_tab = ['h-h-data2.txt', 'h-h2-data.txt', 'he-he.txt',
+                         'e-h.txt', 'e-he.txt', 'h2_molecule_bc.txt',
+                         'h2_molecule_pj.txt', 'p-h-elast.txt', 'p-he.txt',
+                         'proton-h2-data.txt']
+        self._cross_tab_strs = cross_tab
+        self.cross_tab_list = {}
+        for i, cross_txt in enumerate(cross_tab):
+            self.cross_tab_list[i] = os.path.join(fdir, cross_txt)
+
+        # load table(s)
+        self.load_cross_tables(firstime=True)
+
+    def load_cross_tables(self, firstime=False):
+        '''
+        Collects the information in the cross table files.
+        '''
+        self.cross_tab = dict()
+        for itab in range(len(self.cross_tab_list)):
+            self.cross_tab[itab] = read_cross_txt(self.cross_tab_list[itab], firstime=firstime,
+                                                  obj=self.obj(), kelvin=self.kelvin)
+
+    def tab_interp(self, tg, itab=0, out='el', order=1):
+        ''' Interpolates the cross section tables in the simulated domain.
+            IN:
+                tg  : Temperature [K]
+                order: interpolation order (1: linear, 3: cubic)
+            OUT:
+                'se'  : Spin exchange cross section [a.u.]
+                'el'  : Integral Elastic cross section [a.u.]
+                'mt'  : momentum transfer cross section [a.u.]
+                'vi'  : viscosity cross section [a.u.]
+        '''
+
+        if out in ['se el vi mt'.split()] and not self.load_cross_tables:
+            raise ValueError("(EEE) tab_interp: EOS table not loaded!")
+
+        finterp = interpolate.interp1d(np.log(self.cross_tab[itab]['tg']),
+                                       self.cross_tab[itab][out])
+        tgreg = np.array(tg, copy=True)
+        max_temp = np.max(self.cross_tab[itab]['tg'])
+        tgreg[tg > max_temp] = max_temp
+        min_temp = np.min(self.cross_tab[itab]['tg'])
+        tgreg[tg < min_temp] = min_temp
+
+        return finterp(np.log(tgreg))
+
+    def __call__(self, tg, *args, **kwargs):
+        '''alias for self.tab_interp.'''
+        return self.tab_interp(tg, *args, **kwargs)
+
+    def __repr__(self):
+        return '{} == {}'.format(object.__repr__(self), str(self))
+
+    def __str__(self):
+        return "Cross_sect(cross_tab={}, fdir='{}')".format(self._cross_tab_strs, self.fdir)
+
+
+class Muram_units(units.HelitaUnits):
+
+    def __init__(self, filename=None, base_units=None, verbose=False,**kw__super_init):
         '''
         Units and constants in cgs
         '''
-        self.uni = {}
-        self.verbose = verbose
-        self.uni['tg'] = 1.0  # K
-        self.uni['l'] = 1.0  # to cm
-        self.uni['rho'] = 1.0  # g cm^-3
-        self.uni['u'] = 1.0  # cm/s
-        self.uni['b'] = np.sqrt(4.0*np.pi)  # convert to Gauss
-        self.uni['t'] = 1.0  # seconds
-        self.uni['j'] = 1.0  # current density
+        #self.uni = {}
+        #self.verbose = verbose
+        #self.uni['tg'] = 1.0  # K
+        #self.uni['l'] = 1.0  # to cm
+        #self.uni['u_l'] = 1.0  # to cm
+        #print(self.uni['u_l'])
+        #self.uni['rho'] = 1.0  # g cm^-3
+        #self.uni['u'] = 1.0  # cm/s
+        #self.uni['b'] = np.sqrt(4.0*np.pi)  # convert to Gauss
+        #self.uni['t'] = 1.0  # seconds
+        #self.uni['j'] = 1.0  # current density
+        '''get units from file (by reading values of u_l, u_t, u_r, gamma).
+
+        filename: str; name of file. Default 'mhd.in'
+        fdir: str; directory of file. Default './'
+        verbose: True (default) or False
+            True -> if we use default value for a base unit because
+                    we can't find its value otherwise, print warning.
+        base_units: None (default), dict, or list
+            None -> ignore this keyword.
+            dict -> if contains any of the keys: u_l, u_t, u_r, gamma,
+                    initialize the corresponding unit to the value found.
+                    if base_units contains ALL of those keys, IGNORE file.
+            list -> provides value for u_l, u_t, u_r, gamma; in that order.
+        '''
+        DEFAULT_UNITS = dict(u_l=1., u_t=1., u_r=1.0, gamma=1.667)
+        base_to_use = dict()  # << here we will put the u_l, u_t, u_r, gamma to actually use.
+        _n_base_set = 0  # number of base units set (i.e. assigned in base_to_use)
+
+        # setup units from base_units, if applicable
+        if base_units is not None:
+            try:
+                base_units.items()
+            except AttributeError:  # base_units is a list
+                for i, val in enumerate(base_units):
+                    base_to_use[self.BASE_UNITS[i]] = val
+                    _n_base_set += 1
+            else:
+                for key, val in base_units.items():
+                    if key in DEFAULT_UNITS.keys():
+                        base_to_use[key] = val
+                        _n_base_set += 1
+                    elif verbose:
+                        print(('(WWW) the key {} is not a base unit',
+                              ' so it was ignored').format(key))
+
+        # setup units from file (or defaults), if still necessary.
+        if _n_base_set != len(DEFAULT_UNITS):
+            if filename is None:
+                file_exists = False
+            else:
+                file = os.path.join(fdir, filename)
+                file_exists = os.path.isfile(file)
+            if file_exists:
+                # file exists -> set units using file.
+                self.params = read_idl_ascii(file, firstime=True)
+
+                def setup_unit(key):
+                    if base_to_use.get(key, None) is not None:
+                        return
+                    # else:
+                    try:
+                        value = self.params[key]
+                    except Exception:
+                        value = DEFAULT_UNITS[key]
+                        if verbose:
+                            printstr = ("(WWW) the file '{file}' does not contain '{unit}'. "
+                                        "Default Solar Bifrost {unit}={value} has been selected.")
+                            print(printstr.format(file=file, unit=key, value=value))
+                    base_to_use[key] = value
+
+                for unit in DEFAULT_UNITS.keys():
+                    setup_unit(unit)
+            else:
+                # file does not exist -> setup default units.
+                units_to_set = {unit: DEFAULT_UNITS[unit] for unit in DEFAULT_UNITS.keys()
+                                if getattr(self, unit, None) is None}
+                if verbose:
+                    print("(WWW) selected file '{file}' is not available.".format(file=filename),
+                          "Setting the following Default Solar Bifrost units: ", units_to_set)
+                for key, value in units_to_set.items():
+                    base_to_use[key] = value
+
+        # initialize using instructions from HelitaUnits (see helita.sim.units.py)
+        super().__init__(**base_to_use, verbose=verbose, **kw__super_init)
+
 
         # Units and constants in SI
         convertcsgsi(self)
 
         globalvars(self)
+
+
+class Create_new_br_files:
+    def write_mesh(self, x=None, y=None, z=None, nx=None, ny=None, nz=None,
+                   dx=None, dy=None, dz=None, meshfile="newmesh.mesh"):
+        """
+        Writes mesh to ascii file.
+
+        The meshfile units are simulation units for length (or 1/length, for derivatives).
+        """
+        def __xxdn(f):
+            '''
+            f is centered on (i-.5,j,k)
+            '''
+            nx = len(f)
+            d = -5. / 2048
+            c = 49. / 2048
+            b = -245. / 2048
+            a = .5 - b - c - d
+            x = (a * (f + np.roll(f, 1)) +
+                 b * (np.roll(f, -1) + np.roll(f, 2)) +
+                 c * (np.roll(f, -2) + np.roll(f, 3)) +
+                 d * (np.roll(f, -3) + np.roll(f, 4)))
+            for i in range(0, 4):
+                x[i] = x[4] - (4 - i) * (x[5] - x[4])
+            for i in range(1, 4):
+                x[nx - i] = x[nx - 4] + i * (x[nx - 4] - x[nx - 5])
+
+            x[nx-3:] = x[nx-3:][::-1]  # fixes order in the tail of x
+            return x
+
+        def __ddxxup(f, dx=None):
+            '''
+            X partial up derivative
+            '''
+            if dx is None:
+                dx = 1.
+            nx = len(f)
+            d = -75. / 107520. / dx
+            c = 1029 / 107520. / dx
+            b = -8575 / 107520. / dx
+            a = 1. / dx - 3 * b - 5 * c - 7 * d
+            x = (a * (np.roll(f, -1) - f) +
+                 b * (np.roll(f, -2) - np.roll(f, 1)) +
+                 c * (np.roll(f, -3) - np.roll(f, 2)) +
+                 d * (np.roll(f, -4) - np.roll(f, 3)))
+            x[:3] = x[3]
+            for i in range(1, 5):
+                x[nx - i] = x[nx - 5]
+            return x
+
+        def __ddxxdn(f, dx=None):
+            '''
+            X partial down derivative
+            '''
+            if dx is None:
+                dx = 1.
+            nx = len(f)
+            d = -75. / 107520. / dx
+            c = 1029 / 107520. / dx
+            b = -8575 / 107520. / dx
+            a = 1. / dx - 3 * b - 5 * c - 7 * d
+            x = (a * (f - np.roll(f, 1)) +
+                 b * (np.roll(f, -1) - np.roll(f, 2)) +
+                 c * (np.roll(f, -2) - np.roll(f, 3)) +
+                 d * (np.roll(f, -3) - np.roll(f, 4)))
+            x[:4] = x[4]
+            for i in range(1, 4):
+                x[nx - i] = x[nx - 4]
+            return x
+
+        f = open(meshfile, 'w')
+
+        for p in ['x', 'y', 'z']:
+            setattr(self, p, locals()[p])
+            if (getattr(self, p) is None):
+                setattr(self, 'n' + p, locals()['n' + p])
+                setattr(self, 'd' + p, locals()['d' + p])
+                setattr(self, p, np.linspace(0,
+                                             getattr(self, 'n' + p) *
+                                             getattr(self, 'd' + p),
+                                             getattr(self, 'n' + p)))
+            else:
+                if (len(locals()[p]) < 1):
+                    raise ValueError("(EEE): "+p+" axis has length zero")
+                setattr(self, 'n' + p, len(locals()[p]))
+            if getattr(self, 'n' + p) > 1:
+                xmdn = __xxdn(getattr(self, p))
+                dxidxup = __ddxxup(getattr(self, p))
+                dxidxdn = __ddxxdn(getattr(self, p))
+            else:
+                xmdn = getattr(self, p)
+                dxidxup = np.array([1.0])
+                dxidxdn = np.array([1.0])
+            f.write(str(getattr(self, 'n' + p)) + "\n")
+            f.write(" ".join(map("{:.5f}".format, getattr(self, p))) + "\n")
+            f.write(" ".join(map("{:.5f}".format, xmdn)) + "\n")
+            f.write(" ".join(map("{:.5f}".format, 1.0/dxidxup)) + "\n")
+            f.write(" ".join(map("{:.5f}".format, 1.0/dxidxdn)) + "\n")
+        f.close()
