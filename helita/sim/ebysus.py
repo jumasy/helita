@@ -101,7 +101,7 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
 
     def __init__(self, *args, fast=True, match_type=MATCH_TYPE_DEFAULT,
                  mesh_location_tracking=stagger.DEFAULT_MESH_LOCATION_TRACKING,
-                 read_mode='io',
+                 read_mode='io', auto_compress=False,
                  N_memmap=200, mm_persnap=True,
                  do_caching=True, cache_max_MB=10, cache_max_Narr=20,
                  _force_disable_memory=False,
@@ -121,6 +121,11 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
             'zc': 'zarr-compressed', the output from the EbysusData.compress() function.
                 'zc' mode is generally faster to read and requires less storage space.
                 But it requires the compress function to have been run separately.
+
+        auto_compress: bool, default False
+            if read_mode != 'io', if compressed data doesn't exist then compress it now.
+            If you prefer to use read_mode='zc', using auto_compress=True is convenient,
+            since it will compress data if and only if the data has not been compressed already.
 
         N_memmap: int (default 0)
             keep the N_memmap most-recently-created memmaps stored in self._memory_numpy_memmap.
@@ -168,6 +173,14 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
 
         *args and **kwargs go to helita.sim.bifrost.BifrostData.__init__
         '''
+        # compress if auto_compress and read_mode not 'io'
+        if auto_compress and (read_mode != 'io'):
+            if read_mode == 'zc':
+                # create other, temporary EbysusData object; use it to compress if necessary.
+                tmp = type(self)(*args, read_mode='io', auto_compress=False,
+                                 verbose=False, _force_disable_memory=True)
+                tmp.compress(skip_existing=True, _verbose_if_0_compression=False)
+
         # set values of some attrs (e.g. from args & kwargs passed to __init__)
         self.mesh_location_tracking = mesh_location_tracking
         self.match_type = match_type
@@ -1281,7 +1294,7 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
                 smash_folder(ORIGINAL, mode=smash_mode, warn=warn, **kw_smash)
             return result
 
-    def _zc_compress(self, verbose=1, skip_existing=False, **kw__zarr):
+    def _zc_compress(self, verbose=1, skip_existing=False, _verbose_if_0_compression=True, **kw__zarr):
         '''compress the .io folder into a .zc folder.
         Converts data to format readable by zarr.
         Testing indicates the .zc data usually takes less space AND is faster to read.
@@ -1289,6 +1302,11 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
         skip_existing: bool, default False
             if True, skip compressing each file for which a compressed version exists
             (only checking destination filepath to determine existence.)
+
+        _verbose_if_0_compression: bool, default True
+            whether to be verbose if there are 0 files being compressed.
+            Default is True so user will not be confused if calling this function directly.
+            Internal calls may use False to avoid mentioning compression to user, when no compression actually occurs.
 
         returns (the name of the new folder, the number of bytes originally, the number of bytes after compression)
         '''
@@ -1322,9 +1340,12 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
 
         # bookkeeping - printing updates
         if verbose >= 1:   # calculate total number of files and print progress as fraction.
-            nfiles = sum(1 for src, dst in snapfiles_iter(makedirs=False))
+            nfiles = len(list(snapfiles_iter(makedirs=False)))
             nfstr = len(str(nfiles))
             start_time = time.time()
+
+        if (nfiles == 0) and not _verbose_if_0_compression:
+            verbose = 0
 
         def print_if_verbose(*args, vreq=1, print_time=True, file_n=None, clearline=0, **kw):
             if verbose < vreq:
