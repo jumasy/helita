@@ -350,6 +350,21 @@ def fluid_SLs_and_names(dd, with_electrons=True):
     return list(iter_fluid_SLs_and_names(dd, with_electrons=with_electrons))
 
 
+@register_as_multifluid_func
+def neutral_SLs_and_names(dd):
+    '''returns list of ((species, level), name) for neutral fluids in dd.'''
+    return list((SL, name) for (SL, name) in iter_fluid_SLs_and_names(dd) if get_charge(dd, SL)==0)
+
+
+@register_as_multifluid_func
+def charged_SLs_and_names(dd, with_electrons=True):
+    '''returns list of ((species, level), name) for neutral fluids in dd.
+    with electrons: bool, default True
+        whether to include electrons. If True, put electrons first. ((-1,0), 'e-')
+    '''
+    return list((SL, name) for (SL, name) in iter_fluid_SLs_and_names(dd) if get_charge(dd, SL)!=0)
+
+
 ''' --------------------- compare fluids --------------------- '''
 
 
