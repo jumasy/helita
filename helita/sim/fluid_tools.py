@@ -419,7 +419,7 @@ def get_fluid_name(obj, fluid=None):
                                    'but got fluid = {}'.format(fluid))
                 raise TypeError(errmsg_badfluid)
         if specie < 0:
-            return 'e-'
+            return 'e'
         else:
             return obj.fluids[fluid].name
 
