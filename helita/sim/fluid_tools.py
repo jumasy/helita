@@ -23,15 +23,21 @@ except ImportError:
 # set defaults
 HIDE_DECORATOR_TRACEBACKS = True  # whether to hide decorators from this file when showing error traceback.
 
+''' --------------------- MULTIFLUID_FUNCS --------------------- '''
+
 # list of functions from fluid_tools which will be set as methods of the Multifluid class.
-# for example, EbysusData inherits from Multifluid, so if Multifluid gets get_mass, then:
-# for dd=EbysusData(...), dd.get_mass(*args, **kw) == fluid_tools.get_mass(dd, *args, **kw).
-MULTIFLUID_FUNCS = \
-    ['set_mf_fluid', 'set_mfi', 'set_mfj', 'set_fluids',
-     'get_species_name', 'get_fluid_name', 'get_mass', 'get_charge',
-     'get_cross_tab', 'get_cross_sect', 'get_coll_type',
-     'i_j_same_fluid', 'fluid_SLs', 'fluid_SLs_and_names',
-     'iter_fluid_SLs', 'iter_fluid_SLs_and_names']
+#   funcs can be added to this list by decorating them with @register_as_multifluid_func.
+# for example, since Ebysus inherits from Multifluid and 'get_mass' goes into MULTIFLUID_FUNCS:
+#   for dd=EbysusData(...): dd.get_mass(*args, **kw) == fluid_tools.get_mass(dd, *args, **kw).
+MULTIFLUID_FUNCS = []
+
+def register_as_multifluid_func(f):
+    '''registers f as a multifluid func (puts f.__name__ into MULTIFLUID_FUNCS).
+    Then, returns f, unchanged.
+    '''
+    MULTIFLUID_FUNCS.append(f.__name__)
+    return f
+
 
 ''' --------------------- setting fluids --------------------- '''
 
@@ -42,7 +48,7 @@ MULTIFLUID_FUNCS = \
 # However, we cannot delete these functions, for historical reasons.
 # And, maybe they are still useful thanks to the kwarg interpretation in set_fluids.
 
-
+@register_as_multifluid_func
 def set_mf_fluid(obj, species=None, level=None, i='i'):
     '''sets obj.mf_{i}species and obj.mf_{i}level.
     species, level: None or int
@@ -53,20 +59,21 @@ def set_mf_fluid(obj, species=None, level=None, i='i'):
     setattr(obj, 'mf_'+i+'level', level)
 
 
+@register_as_multifluid_func
+@tools.format_docstring(doc=set_mf_fluid.__doc__.format(i='i'))
 def set_mfi(obj, mf_ispecies=None, mf_ilevel=None):
+    '''{doc}'''
     return obj.set_mf_fluid(mf_ispecies, mf_ilevel, 'i')
 
 
-set_mfi.__doc__ = set_mf_fluid.__doc__.format(i='i')
-
-
+@register_as_multifluid_func
+@tools.format_docstring(doc=set_mf_fluid.__doc__.format(i='j'))
 def set_mfj(obj, mf_jspecies=None, mf_jlevel=None):
+    '''{doc}'''
     return obj.set_mf_fluid(mf_jspecies, mf_jlevel, 'j')
 
 
-set_mfj.__doc__ = set_mf_fluid.__doc__.format(i='j')
-
-
+@register_as_multifluid_func
 def set_fluids(obj, **kw__fluids):
     '''interprets kw__fluids then sets them using set_mfi and set_mfj.
     returns (ifluid, jfluid).
@@ -251,7 +258,7 @@ def use_fluids(**kw__fluids):
 
 
 def fluid_pairs(fluids, ordered=False, allow_same=False):
-    '''returns an iterator over fluids of obj.
+    '''returns an iterator over pairs of fluids.
 
     ordered: False (default) or True
         False -> (A,B) and (B,A) will be yielded separately.
@@ -279,6 +286,7 @@ def fluid_pairs(fluids, ordered=False, allow_same=False):
     assert False  # we should never reach this line...
 
 
+@register_as_multifluid_func
 def iter_fluid_SLs(dd, with_electrons=True, iset=False):
     '''returns an iterator over the fluids of dd, and electrons.
     yields SL pairs; NOT at_tools.fluids.Fluid objects!
@@ -302,6 +310,7 @@ def iter_fluid_SLs(dd, with_electrons=True, iset=False):
             yield fluid.SL
 
 
+@register_as_multifluid_func
 def fluid_SLs(dd, with_electrons=True):
     '''returns list of (species, level) pairs for fluids in dd.
     See also: iter_fluid_SLs
@@ -313,6 +322,7 @@ def fluid_SLs(dd, with_electrons=True):
     return list(iter_fluid_SLs(dd, with_electrons=with_electrons))
 
 
+@register_as_multifluid_func
 def iter_fluid_SLs_and_names(dd, with_electrons=True, iset=False):
     '''returns and iterator over the fluids of dd, and electrons.
     yields ((species, level), name)
@@ -328,6 +338,7 @@ def iter_fluid_SLs_and_names(dd, with_electrons=True, iset=False):
         yield (SL, dd.get_fluid_name(SL))
 
 
+@register_as_multifluid_func
 def fluid_SLs_and_names(dd, with_electrons=True):
     '''returns list of ((species, level), name) for fluids in dd.
     See also: iter_fluid_SLs_and_names
@@ -342,6 +353,7 @@ def fluid_SLs_and_names(dd, with_electrons=True):
 ''' --------------------- compare fluids --------------------- '''
 
 
+@register_as_multifluid_func
 def i_j_same_fluid(obj):
     '''returns whether obj.ifluid and obj.jfluid represent the same fluid.'''
     return fluid_equals(obj.ifluid, obj.jfluid)
@@ -359,6 +371,7 @@ def fluid_equals(iSL, jSL):
 # for each of these functions, obj should be an EbysusData object.
 
 
+@register_as_multifluid_func
 def get_species_name(obj, specie=None):
     '''return specie's name: 'e' for electrons; element (atomic symbol) for other fluids.
     if specie is None, use obj.mf_ispecies.
@@ -371,6 +384,7 @@ def get_species_name(obj, specie=None):
         return obj.att[specie].params.element
 
 
+@register_as_multifluid_func
 def get_fluid_name(obj, fluid=None):
     '''return fluid's name: 'e-' for electrons; element & ionization for other fluids (e.g. 'H II').
     fluid can be at_tools.fluids.Fluid object, (species, level) pair, or -1 (for electrons).
@@ -395,6 +409,7 @@ def get_fluid_name(obj, fluid=None):
             return obj.fluids[fluid].name
 
 
+@register_as_multifluid_func
 def get_mass(obj, specie=None, units='amu'):
     '''return specie's mass [units]. default units is amu.
     units: one of: ['amu', 'g', 'kg', 'cgs', 'si', 'simu']. Default 'amu'
@@ -439,6 +454,7 @@ def get_mass(obj, specie=None, units='amu'):
             return m_amu * obj.uni.simu_amu
 
 
+@register_as_multifluid_func
 def get_charge(obj, SL=None, units='e'):
     '''return the charge fluid SL in [units]. default is elementary charge units.
     units: one of ['e', 'elementary', 'esu', 'c', 'cgs', 'si', 'simu']. Default 'elementary'.
@@ -471,6 +487,7 @@ def get_charge(obj, SL=None, units='e'):
         return charge * obj.uni.simu_qsi_e
 
 
+@register_as_multifluid_func
 def get_cross_tab(obj, iSL=None, jSL=None, **kw__fluids):
     '''return (filename of) cross section table for obj.ifluid, obj.jfluid.
     use S=-1 for electrons. (e.g. iSL=(-1,1) represents electrons.)
@@ -512,6 +529,7 @@ def get_cross_tab(obj, iSL=None, jSL=None, **kw__fluids):
     raise ValueError(errmsg)
 
 
+@register_as_multifluid_func
 def get_cross_sect(obj, **kw__fluids):
     '''returns Cross_sect object containing cross section data for obj.ifluid & obj.jfluid.
     equivalent to obj.cross_sect(cross_tab=[get_cross_tab(obj, **kw__fluids)])
@@ -522,6 +540,7 @@ def get_cross_sect(obj, **kw__fluids):
     return obj.cross_sect([obj.get_cross_tab(**kw__fluids)])
 
 
+@register_as_multifluid_func
 def get_coll_type(obj, iSL=None, jSL=None, **kw__fluids):
     '''return type of collisions between obj.ifluid, obj.jfluid.
     use S=-1 for electrons. (e.g. iSL=(-1,1) represents electrons.)
