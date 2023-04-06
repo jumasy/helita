@@ -177,9 +177,13 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
         if auto_compress and (read_mode != 'io'):
             if read_mode == 'zc':
                 # create other, temporary EbysusData object; use it to compress if necessary.
-                tmp = type(self)(*args, read_mode='io', auto_compress=False,
-                                 verbose=False, _force_disable_memory=True)
-                tmp.compress(skip_existing=True, _verbose_if_0_compression=False)
+                try:
+                    tmp = type(self)(*args, read_mode='io', auto_compress=False,
+                                     verbose=False, _force_disable_memory=True)
+                except FileNotFoundError:  # << this means there is no longer an 'io' folder;
+                    pass   # That's fine because we're trying to read in 'zc' mode.
+                else:
+                    tmp.compress(skip_existing=True, _verbose_if_0_compression=False)
 
         # set values of some attrs (e.g. from args & kwargs passed to __init__)
         self.mesh_location_tracking = mesh_location_tracking

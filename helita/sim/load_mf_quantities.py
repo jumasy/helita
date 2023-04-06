@@ -2122,11 +2122,11 @@ def get_mf_wavequant(obj, quant, WAVE_QUANT=None):
         return ci_sim
 
     elif quant == 'fplasma':
-        q = obj.get_charge(obj.ifluid, units='si')
+        q = obj.get_charge(units='si')
         assert q != 0, "ifluid {} must be charged to get fplasma.".format(obj.ifluid)
-        m = obj.get_mass(obj.ifluid, units='si')
+        m = obj.get_mass(units='si')
         eps0 = obj.uni.permsi
-        n = obj('nr')
+        n = obj('nr') * obj.uni('nr', 'si')
         unit = 1 / obj.uni.usi_hz   # convert from si frequency to ebysus frequency.
         consts = np.sqrt(q**2 / (eps0 * m)) * unit
         return consts * np.sqrt(n)    # [ebysus frequency units]
