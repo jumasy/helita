@@ -291,6 +291,14 @@ def is_integer(x):
     return isinstance(x, (int, np.integer)) or apply(x, 'is_integer', default=False)
 
 
+def format_docstring(*args__format, **kw__format):
+    '''returns a decorator of f which returns f, after updating f.__doc__ via f.__doc__.format(...)'''
+    def return_f_after_formatting_docstring(f):
+        f.__doc__ = f.__doc__.format(*args__format, **kw__format)
+        return f
+    return return_f_after_formatting_docstring
+
+
 ''' --------------------------- coordinate transformations --------------------------- '''
 
 

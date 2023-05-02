@@ -895,7 +895,8 @@ class BifrostData():
 
             # squeeze if self.squeeze_output (disabled by default)
             if self.squeeze_output and (np.ndim(val) > 0):
-                val = val.squeeze()
+                #val = val.squeeze()  # << "naive" implementation; crashes if val.size==1 and val is memmap
+                val = np.asarray(val).squeeze()   # asarray prevents the crash by converting subclasses to numpy array first.
 
             # convert units if we are using units_output != 'simu'.
             if self.units_output != 'simu':

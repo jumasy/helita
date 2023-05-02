@@ -1759,3 +1759,5 @@ UNI_speed = U_TUPLE(UNI.u, UNI_length.name / UNI_time.name)
 UNI_rho = U_TUPLE(UNI.r, UNI_mass.name / (UNI_length.name**3))  # mass density
 UNI_nr = U_TUPLE(UNI.nr, UNI_length.name ** (-3))              # number density
 UNI_hz = U_TUPLE(UNI.hz, Usym('s')**(-1))                      # frequency
+UNI_b = U_TUPLE(UNI.b, UsymD(usi='T', ucgs='G'))      # B-field
+UNI_charge = U_TUPLE(UNI.q, UsymD(usi='C', ucgs='esu'))

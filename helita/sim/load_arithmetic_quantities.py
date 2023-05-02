@@ -417,7 +417,7 @@ _GRADVECT_QUANT = ('GRADVECT_QUANT',
                    ['divup', 'divdn', 'div',  # note: div must come after divup and divdn,
                     # since to check which quant to get we are checking .startswith,
                     # and 'divup' and 'divdn' both start with 'div'.
-                    'rot', 'she', 'curlcc', 'curvec',
+                    'rot', 'she', 'curlcc', 'curvec', 'facecurl', 'edgecurl',
                     'chkdiv', 'chbdiv', 'chhdiv']
                    )
 # get value
@@ -439,7 +439,9 @@ def get_gradients_vect(obj, quant):
         docvar('rot',     'starting with, rotational (a.k.a. curl) [simu units]', uni=UNI.quant_child(0))
         docvar('she',     'starting with, shear [simu units]', uni=UNI.quant_child(0))
         docvar('curlcc',  'starting with, curl but shifted (via interpolation) back to original location on cell [simu units]', uni=UNI.quant_child(0))
-        docvar('curvec',  'starting with, curl of face-centered vector (e.g. B, p) [simu units]', uni=UNI.quant_child(0))
+        docvar('curvec',  'starting with, curl of face-centered vector (e.g. B, p) [simu units]. Result is edge-centered.', uni=UNI.quant_child(0))
+        docvar('facecurl', 'starting with, curl of face-centered vector (e.g. B, p) [simu units]. Result is edge-centered.', uni=UNI.quant_child(0))
+        docvar('edgecurl', 'starting with, curl of edge-centered vector (e.g. E, J) [simu units]. Result is face-centered.', uni=UNI.quant_child(0))
         docvar('chkdiv',  'starting with, ratio of the divergence with the maximum of the abs of each spatial derivative [simu units]')
         docvar('chbdiv',  'starting with, ratio of the divergence with the sum of the absolute of each spatial derivative [simu units]')
         docvar('chhdiv',  'starting with, ratio of the divergence with horizontal averages of the absolute of each spatial derivative [simu units]')
@@ -530,16 +532,27 @@ def get_gradients_vect(obj, quant):
         dqy_dz = obj.get_var('d' + q + y + 'd' + z + 'dn' + z + 'up')
         return dqz_dy - dqy_dz
 
-    elif getq == 'curvec':  # curl of vector which is originally on face of cell
+    elif getq == 'curvec' or getq == 'facecurl':  # curl of vector which is originally on face of cell
         x = q[-1]  # axis, 'x', 'y', 'z'
         q = q[:-1]  # q without axis
         y, z = YZ_FROM_X[x]
         # interpolation notes:
         ## qz is at (0, 0, -0.5); dqzdydn is at (0, -0.5, -0.5)
         ## qy is at (0, -0.5, 0); dqydzdn is at (0, -0.5, -0.5)
-        dqz_dydn = obj.get_var('d' + q + z + 'd' + y + 'dn')
-        dqy_dzdn = obj.get_var('d' + q + y + 'd' + z + 'dn')
-        return dqz_dydn - dqy_dzdn
+        dqz_dy = obj.get_var(f'd{q}{z}d{y}dn')
+        dqy_dz = obj.get_var(f'd{q}{y}d{z}dn')
+        return dqz_dy - dqy_dz
+
+    elif getq == 'edgecurl':  # curl of vector which is originally on edge of cell
+        x = q[-1]  # axis, 'x', 'y', 'z'
+        q = q[:-1]  # q without axis
+        y, z = YZ_FROM_X[x]
+        # interpolation notes:
+        ## qz is at (-0.5, -0.5, 0); dqzdyup is at (-0.5, 0, 0)
+        ## qy is at (-0.5, 0, -0.5); dqydzup is at (-0.5, 0, 0)
+        dqz_dy = obj.get_var(f'd{q}{z}d{y}up')
+        dqy_dz = obj.get_var(f'd{q}{y}d{z}up')
+        return dqz_dy - dqy_dz
 
     elif getq in ['rot', 'she']:
         q = q[:-1]  # base variable
@@ -858,7 +871,8 @@ def get_projections(obj, quant):
 # default
 _VECTOR_PRODUCT_QUANT = \
     ('VECTOR_PRODUCT_QUANT',
-     ['times', '_facecross_', '_edgecross_', '_edgefacecross_',
+     ['times', '_facecross_', '_edgecross_',
+      '_edgefacecrosstoface_', '_edgefacecrosstoedge_',
       '_facecrosstocenter_', '_facecrosstoface_'
       ]
      )
@@ -878,9 +892,12 @@ def get_vector_product(obj, quant):
                                'result is edge-centered. E.g. result_x is at ( 0  , -0.5, -0.5).'))
         docvar('_edgecross_', ('cross product [simu units]. For two edge-centered vectors, such as E, I. '
                                'result is face-centered. E.g. result_x is at (-0.5,  0  ,  0  ).'))
-        docvar('_edgefacecross_', ('cross product [simu units]. A_edgefacecross_Bx gives x-component of A x B.'
+        docvar('_edgefacecrosstoface_', ('cross product [simu units]. A_edgefacecrosstoface_Bx gives x-component of A x B.'
                                    'A must be edge-centered (such as E, I); B must be face-centered, such as B, u.'
                                    'result is face-centered. E.g. result_x is at (-0.5,  0  ,  0  ).'))
+        docvar('_edgefacecrosstoedge_', ('cross product [simu units]. A_edgefacecrosstoedge_Bx gives x-component of A x B.'
+                                   'A must be edge-centered (such as E, I); B must be face-centered, such as B, u.'
+                                   'result is edge-centered. E.g. result_x is at ( 0  , -0.5, -0.5).'))
         docvar('_facecrosstocenter_', ('cross product for two face-centered vectors such as B, u. '
                                        'result is fully centered. E.g. result_x is at ( 0  ,  0  ,  0  ).'
                                        ' For most cases, it is better to use _facecrosstoface_'))
@@ -934,7 +951,7 @@ def get_vector_product(obj, quant):
         AxB__x = Ay * Bz - By * Az   # x component of A x B. (x='x', 'y', or 'z')
         return AxB__x
 
-    elif cross == '_edgefacecross_':
+    elif cross == '_edgefacecrosstoface_':
         # interpolation notes, for x='x', y='y', z='z':
         # resultx will be at (-0.5, 0, 0)
         # Ay is at (-0.5,  0  , -0.5). we must shift by   zup   to align with result.
@@ -947,6 +964,20 @@ def get_vector_product(obj, quant):
         By = obj.get_var(B+y + xdn+yup)
         Bz = obj.get_var(B+z + xdn+zup)
         AxB__x = Ay * Bz - By * Az   # x component of A x B. (x='x', 'y', or 'z')
+        return AxB__x
+
+    elif cross == '_edgefacecrosstoedge_':
+        # interpolation notes, for x='x', y='y', z='z':
+        # resultx will be at (0, -0.5, -0.5)
+        # Ay is at (-0.5,  0  , -0.5). we must shift by xup ydn to align with result.
+        # Az is at (-0.5, -0.5,  0  ). we must shift by xup zdn to align with result.
+        # By is at ( 0  , -0.5,  0  ). we must shift by   zdn   to align with result.
+        # Bz is at ( 0  ,  0  , -0.5). we must shift by   ydn   to align with result.
+        Ay = obj(f'{A}{y}{x}up{y}dn')
+        Az = obj(f'{A}{z}{x}up{z}dn')
+        By = obj(f'{B}{y}{z}dn')
+        Bz = obj(f'{B}{z}{y}dn')
+        AxB__x = Ay * Bz - By * Az   # x component of A cross B
         return AxB__x
 
     elif cross == '_facecrosstocenter_':

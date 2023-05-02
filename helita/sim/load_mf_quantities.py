@@ -17,6 +17,8 @@ from .units import (
     UCONST,
     UNI,
     UNITS_FACTOR_1,
+    UNI_charge,
+    UNI_b,
     UNI_hz,
     UNI_length,
     UNI_nr,
@@ -43,6 +45,7 @@ units_e = dict(uni_f=UNI.e, usi_name=Usym('J') / Usym('m')**3)  # ucgs_name= ???
 def load_mf_quantities(obj, quant, *args__None, GLOBAL_QUANT=None, EFIELD_QUANT=None,
                        ONEFLUID_QUANT=None, ELECTRON_QUANT=None,
                        CONTINUITY_QUANT=None, MOMENTUM_QUANT=None, HEATING_QUANT=None,
+                       INDUCTION_QUANT=None,
                        SPITZERTERM_QUANT=None,
                        COLFRE_QUANT=None, LOGCUL_QUANT=None, CROSTAB_QUANT=None,
                        DRIFT_QUANT=None, MEAN_QUANT=None, CFL_QUANT=None, PLASMA_QUANT=None,
@@ -74,6 +77,7 @@ def load_mf_quantities(obj, quant, *args__None, GLOBAL_QUANT=None, EFIELD_QUANT=
         (get_continuity_quant, 'CONTINUITY_QUANT'),
         (get_momentum_quant, 'MOMENTUM_QUANT'),
         (get_heating_quant, 'HEATING_QUANT'),
+        (get_induction_quant, 'INDUCTION_QUANT'),
         (get_spitzerterm, 'SPITZERTERM_QUANT'),
         (get_mf_colf, 'COLFRE_QUANT'),
         (get_mf_logcul, 'LOGCUL_QUANT'),
@@ -932,7 +936,7 @@ def get_momentum_quant(obj, var, MOMENTUM_QUANT=None):
         # Finally, scalars are at (0,0,0), so we shift those by xdn to align with u.
         Ex = obj.get_var('ef'+x + x+'dn' + y+'up' + z+'up', cache_with_nfluid=0)
         B2 = obj.get_var('b2' + x+'dn')
-        ExB__x = obj.get_var('ef_edgefacecross_b'+x)
+        ExB__x = obj.get_var('ef_edgefacecrosstoface_b'+x)  # (E cross B)_x, 
         nu_ij = obj.get_var('nu_ij' + x+'dn')
         # begin calculations
         q_over_m_nu = (qi/mi) / nu_ij
@@ -1212,6 +1216,62 @@ def get_heating_quant(obj, var, HEATING_QUANT=None):
 
     else:
         raise NotImplementedError(f'{repr(var)} in get_heating_quant')
+
+
+# default
+_INDUCTION_QUANT = ('INDUCTION_QUANT', ['eb_uhallx', 'eb_uhally', 'eb_uhallz',
+                                        'jxb_x', 'jxb_y', 'jxb_z', 
+                                        'eb_hallx', 'eb_hally', 'eb_hallz',
+                                        'bdtime_hallx', 'bdtime_hally', 'bdtime_hallz'])
+# ^'eb' indicates 'ebysus'; hall stuff also in load_quantities but here has units & I trust it more -SE
+
+# get value
+@document_vars.quant_tracking_simple(_INDUCTION_QUANT[0])
+def get_induction_quant(obj, var, INDUCTION_QUANT=None):
+    '''terms used in / related to the induction equation'''
+    if INDUCTION_QUANT is None:
+        INDUCTION_QUANT = _INDUCTION_QUANT[1]
+
+    if var == '':
+        docvar = document_vars.vars_documenter(obj, _INDUCTION_QUANT[0], INDUCTION_QUANT, get_induction_quant.__doc__, nfluid=0)
+        for x in AXES:
+            docvar(f'eb_uhall{x}', f'-1 * J{x} / (ne |qe|). [simu velocity]. Grid-aligned with u (face-centered).',
+                   uni=UNI_speed)
+        for x in AXES:
+            docvar(f'jxb_{x}', f'(J cross B)_{x}. [simu units]. Grid-aligned with E (edge-centered). Equivalent: j_edgefacecrosstoedge_b{x}.',
+                   uni=UNI_charge / UNI_time * UNI_b)
+        for x in AXES:
+            docvar(f'eb_hall{x}', f'(J/(ne |qe|) cross B)_{x}. [simu units]. Grid-aligned with E (edge-centered).',
+                   uni=UNI_speed * UNI_b)
+        for x in AXES:
+            docvar(f'bdtime_hall{x}', f'-curl(J/(ne |qe|)). Hall term contribution to db{x}/dt. [simu units]. Grid-aligned with B (face-centered).',
+                   uni=UNI_b / UNI_time)
+        return None
+
+    if var not in INDUCTION_QUANT:
+        return None
+    base, x = var[:-1], var[-1]
+
+    if base == 'eb_uhall':
+        print('eb_uhall base', x)
+        jx = obj(f'j{x}')
+        neqe = obj(f'nq{x}dn', ifluid=(-1,0))   # -ne * |qe|, aligned with jx
+        return jx / neqe
+
+    elif base == 'jxb_':
+        return obj(f'j_edgefacecrosstoedge_b{x}')
+
+    elif base == 'eb_hall':
+        jxb_x = obj(f'jxb_{x}')
+        y, z = YZ_FROM_X[x]
+        neqe = -obj(f'nq{y}dn{z}dn')   # ne * |qe|, aligned with jxb
+        return jxb_x / neqe
+
+    elif base == 'bdtime_hall':
+        result = -obj(f'edgecurleb_hall{x}')
+        return result
+
+    raise NotImplementedError(f'{repr(var)} in get_induction_quant')
 
 
 # default
@@ -2122,11 +2182,11 @@ def get_mf_wavequant(obj, quant, WAVE_QUANT=None):
         return ci_sim
 
     elif quant == 'fplasma':
-        q = obj.get_charge(obj.ifluid, units='si')
+        q = obj.get_charge(units='si')
         assert q != 0, "ifluid {} must be charged to get fplasma.".format(obj.ifluid)
-        m = obj.get_mass(obj.ifluid, units='si')
+        m = obj.get_mass(units='si')
         eps0 = obj.uni.permsi
-        n = obj('nr')
+        n = obj('nr') * obj.uni('nr', 'si')
         unit = 1 / obj.uni.usi_hz   # convert from si frequency to ebysus frequency.
         consts = np.sqrt(q**2 / (eps0 * m)) * unit
         return consts * np.sqrt(n)    # [ebysus frequency units]
