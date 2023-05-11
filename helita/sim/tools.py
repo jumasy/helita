@@ -739,6 +739,77 @@ def rotation_apply(rotations, vecs):
     return np.sum(rotations * np.expand_dims(vecs, axis=(-2)), axis=-1)
 
 
+class RotationManager3D():
+    '''convenient way to use the rotation_align and rotation_apply methods.
+    For rotating vectors such that one specific vector lines up with a certain direction.
+    The rotation may be different a different value at each point.
+
+    if provided, dd can be any callable object which will return a value when called as dd(varname)
+    [TODO] store dd internally as a weakref.
+    '''
+    def __init__(self, dd=None):
+        self.dd = dd
+
+    def align_vec(self, vecs_source, vecs_destination):
+        '''sets self.rotation = rotation_align(vecs_source, vecs_destination).
+        Also does bookkeeping if rotation calc succeeds:
+            set self.vecs_source & self.vecs_destination
+            set self.var = None
+        returns self.rotate_vecs(vecs_source)
+        '''
+        self.rotation = rotation_align(vecs_source, vecs_destination)
+        self.vecs_source = vecs_source
+        self.vecs_destination = vecs_destination
+        self.var = None   # << clear self.var.
+        return self.rotate_vecs(vecs_source)
+
+    def align_var(self, var, vecs_destination):
+        '''does self.align_vec, using vecs_source = dd(f'{var}_vecxyz').
+        Example:
+            align_var('b', [0,0,1])
+            sets self.rotation such that dd('b_vecxyz') is aligned with z direction
+            returns self.rotate_vec(dd('b_vecxyz'))
+        Also sets self.var, (but only if rotation calc succeeds).
+        returns result of self.align_vec, i.e. var_vecxyz aligned with vecs_destination.
+        '''
+        dd = self.dd
+        vec = dd(f'{var}_vecxyz')
+        result = self.align_vec(vec, vecs_destination)
+        self.var = var
+        return result
+
+    def rotate_vecs(self, vecs):
+        '''returns rotation_apply(self.rotation, vecs).'''
+        rotation = self.rotation
+        return rotation_apply(rotation, vecs)
+
+    def rotate_vec(self, vx, vy, vz):
+        '''returns np.stack([vx, vy, vz], axis=-1) rotated based on self.rotation.'''
+        rotation = self.rotation
+        vec = np.stack([vx, vy, vz], axis=-1)
+        return rotation_apply(rotation, vec)
+
+    def rotate_var(self, var):
+        '''returns var rotated according to self.rotation.
+        Equivalent to self.rotate_vecs(self.dd(f'{var}_vecxyz')).
+        '''
+        vec = self.dd(f'{var}_vecxyz')
+        return self.rotate_vecs(vec)
+
+    def __repr__(self):
+        if getattr(self, 'rotation', None) is not None:
+            vdstr = str(self.vecs_destination)
+            if len(vdstr) > 100: vdstr = 'self.vecs_destination'  # abbreviated str(vecs_destination)
+            if getattr(self, 'var', None) is not None:
+                content = f'aligning {repr(self.var)} with {vdstr}; getting var from {dd}'
+            else:
+                content = f'aligning self.vecs_source with {vdstr}'
+        else:
+            if getattr(self, dd, None) is not None:
+                content = f'dd={dd}'
+        return f'{type(self).__name__}({content})'
+
+
 ''' --------------------------- plotting --------------------------- '''
 
 

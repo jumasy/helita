@@ -515,3 +515,35 @@ class FakeEbysusData(ebysus.EbysusData):
         if np.shape(val) != self.shape:
             val = val + self.zero()
         return val
+
+    ## VECTORS / ROTATION ##
+    def set_vec(self, var, vec, *args__set_var, **kw__set_var):
+        '''self.set_var(varx, vec[..., 0]); self.set_var(vary, vec[..., 1]); self.set_var(varz, vec[..., 2]).'''
+        self.set_var(f'{var}x', vec[..., 0], *args__set_var, **kw__set_var)
+        self.set_var(f'{var}y', vec[..., 1], *args__set_var, **kw__set_var)
+        self.set_var(f'{var}z', vec[..., 2], *args__set_var, **kw__set_var)
+
+    def rotation_align(self, var, target_vector):
+        '''rotates all fundamental vars according to the rotation which aligns var with target vector.
+        Example:
+            var=='ef', target_vector==[0,0,1]
+            calculates rotation = rotation required to align electric field with z direction.
+            rotates 'b', 'p', 'j' by rotation.
+
+        returns value of var aligned with target_vector.
+        '''
+        rot = tools.RotationManager3D(dd=self)
+        result = rot.align_var(var, target_vector)
+        # magnetic field
+        new_b = rot.rotate_var('b')
+        self.set_vec('b', new_b, fundemental_only=True)
+        # momentum density
+        for _SL in self.iter_fluid_SLs(with_electrons=False, iset=True):
+            new_p = rot.rotate_var('p')  # for self.ifluid  (due to iset=True)
+            self.set_vec('p', new_p, fundemental_only=True)
+        # current density  (simu units -- set_var still needs simu units for non-fundamental vars)
+        new_j = rot.rotate_var('j')
+        new_j_simu = new_j * self.uni('i', 'simu', self.units_output)
+        self.set_vec('j', new_j_simu, units='simu')
+        # return result
+        return result
