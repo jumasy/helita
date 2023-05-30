@@ -284,7 +284,9 @@ _EFIELD_QUANT = ('EFIELD_QUANT',
                   'uepxbx', 'uepxby', 'uepxbz',
                   'batx', 'baty', 'batz',
                   'emomx', 'emomy', 'emomz',
-                  'efneqex', 'efneqey', 'efneqez']
+                  'efpx', 'efpy', 'efpz',
+                  'efbx', 'efby', 'efbz',
+                  ]
                  )
 # get value
 
@@ -299,7 +301,7 @@ def get_efield_var(obj, var, EFIELD_QUANT=None):
         docvar = document_vars.vars_documenter(obj, _EFIELD_QUANT[0], EFIELD_QUANT, get_efield_var.__doc__, nfluid=0)
         EF_UNITS = dict(uni_f=UNI.ef, usi_name=Usym('V')/Usym('m'))  # ucgs_name= ???
         for x in AXES:
-            docvar('ef'+x, x+'-component of electric field [simu. E-field units] ', **EF_UNITS)
+            docvar('ef'+x, x+'-component of electric field [simu. E-field units].', **EF_UNITS)
         for x in AXES:
             docvar('uexb'+x, x+'-component of u_e cross B [simu. E-field units]. Note efx = - uexbx + ...', **EF_UNITS)
         for x in AXES:
@@ -312,9 +314,11 @@ def get_efield_var(obj, var, EFIELD_QUANT=None):
             docvar('emom'+x, x+'-component of collisions contribution to electric field [simu. E-field units]. ' +
                    '== sum_j R_e^(ej) / (n_e q_e)', **EF_UNITS)
         for x in AXES:
-            docvar('efneqe'+x, 'value of n_e * q_e, interpolated to align with the {}-component of E '.format(x) +
-                   '[simu. charge density units]. Note q_e < 0, so efneqe{} < 0.'.format(x),
-                   uni_f=UNI.nq, usi_name=Usym('C')/Usym('m')**3)
+            docvar('efp'+x, f'{x}-component of the electric field for momentum. ' + \
+                   f'Equivalent to ef{x} if do_ue_electric=1, or if obj.match_physics().', **EF_UNITS)
+        for x in AXES:
+            docvar('efb'+x, f'{x}-component of the electric field for induction. ' + \
+                   f'Equivalent to ef{x} if do_hall!="false", or if obj.match_physics().', **EF_UNITS)
         return None
 
     if var not in EFIELD_QUANT:
@@ -324,27 +328,30 @@ def get_efield_var(obj, var, EFIELD_QUANT=None):
     y, z = YZ_FROM_X[x]
     base = var[:-1]   # var without axis. E.g. 'ef', 'uexb', 'emom'.
 
-    if base == 'ef':   # electric field    # efx
+    if base.startswith('ef'):   # electric field    # efx
         with Caching(obj, nfluid=0) as cache:
             # E = - ue x B + (ne qe)^-1 * ( grad(pressure_e) - (ion & rec terms) - sum_j(R_e^(ej)) )
             #   (where the convention used is qe < 0.)
-            # ----- -ue x B contribution ----- #
-            # There is a flag, "do_hall", when "false", we don't let the contribution
-            # from current to ue to enter in to the B x ue for electric field.
-            if obj.match_aux() and obj.get_param('do_hall', default="false") == "false":
-                ue = 'uep'  # include only the momentum contribution in ue, in our ef calculation.
-                if obj.verbose:
-                    warnings.warn('do_hall=="false", so we are dropping the j (current) contribution to ef (E-field)')
-            else:
-                ue = 'ue'   # include the full ue term, in our ef calculation.
-            B_cross_ue__x = -1 * obj.get_var(ue+'xb'+x)
-
-            # ----- grad Pe contribution ----- #
-            battery_x = obj.get_var('bat'+x)
             # ----- calculate ionization & recombination effects ----- #
             if obj.get_param('do_recion', default=False):
                 if obj.verbose:
                     warnings.warn('E-field contribution from ionization & recombination have not yet been added.')
+            # ----- -ue x B contribution ----- #
+            # this will either be obj.get_var('uexb{x}') OR obj.get_var('uepxb{x}').
+            # use 'uepxb' if one of the following is true:
+            #   1) base=='efp' and obj.match_aux() and obj.get_param('do_ue_electric')==0
+            #   2) base=='efb' and obj.match_aux() and obj.get_param('do_hall')=="false"
+            # otherwise, use 'uexb'.
+            uexb = 'uexb'   # for full electric field, include j x B term.
+            if base=='efp':   # electric field for momentum.. use full E unless do_ue_electric disabled.
+                if obj.match_aux() and obj.get_param('do_ue_electric', default=0)==0:
+                    uexb = 'uepxb'  # disabling do_ue_electric removes j x B term from momentum.
+            elif base=='efb':  # electric field for induction.. use full E unless do_hall disabled.
+                if obj.match_aux() and obj.get_param('do_hall', default="false")=="false":
+                    uexb = 'uepxb'  # disabling do_hall removes j x B term from induction.
+            B_cross_ue__x = -1 * obj.get_var(uexb+x)
+            # ----- grad Pe contribution ----- #
+            battery_x = obj.get_var('bat'+x)
             # ----- calculate collisional effects ----- #
             emom_x = obj.get_var('emom'+x)
             # ----- calculate efx ----- #
@@ -367,8 +374,8 @@ def get_efield_var(obj, var, EFIELD_QUANT=None):
         # dpdxup is at (1/2, 0, 0).
         # dpdxup xdn ydn zdn is at (0, -1/2, -1/2) --> aligned with efx.
         interp = 'xdnydnzdn'
-        gradPe_x = obj.get_var('dpd'+x+'up'+interp, iS=-1)  # [simu. energy density units]
-        neqe = obj.get_var('efneqe'+x)   # ne qe, aligned with efx
+        gradPe_x = obj.get_var(f'dpd{x}up'+interp, iS=-1)  # [simu. energy density units]
+        neqe = obj.get_var(f'nq{y}dn{z}dn', iS=-1)   # ne qe, aligned with efx
         result = gradPe_x / neqe
 
     elif base == 'emom':  # -1 * sum_j R_e^(ej) / (ne qe)     (aligned with efx)
@@ -380,16 +387,8 @@ def get_efield_var(obj, var, EFIELD_QUANT=None):
         # --> to align with efx, we shift rijx by xup ydn zdn
         interp = x+'up'+y+'dn'+z+'dn'
         sum_rejx = obj.get_var('rijsum'+x + interp, iS=-1)   # [simu. momentum density units / simu. time units]
-        neqe = obj.get_var('efneqe'+x)   # ne qe, aligned with efx
+        neqe = obj.get_var(f'nq{y}dn{z}dn', iS=-1)   # ne qe, aligned with efx
         result = -1 * sum_rejx / neqe
-
-    elif base == 'efneqe':   # ne qe   (aligned with efx)
-        # interpolation:
-        ## efx is at (0, -1/2, -1/2)
-        ## ne is at (0, 0, 0)
-        # to align with efx, we shift ne by ydn zdn
-        interp = y+'dn'+z+'dn'
-        result = obj.get_var('nq'+interp, iS=-1)   # [simu. charge density units]  (Note: 'nq' < 0 for electrons)
 
     else:
         raise NotImplementedError(f'{repr(base)} in get_efield_var')
@@ -820,7 +819,7 @@ def get_momentum_quant(obj, var, MOMENTUM_QUANT=None):
         if ubase in ('momfef', 'momflorentz'):
             # E interpolation notes:
             # Ex is at (0, -0.5, -0.5); we shift to align with ux at (-0.5, 0, 0)
-            Ex = obj('ef'+x + x+'dn' + y+'up' + z+'up', cache_with_nfluid=0)   # caching improves speed if calculation is repeated.
+            Ex = obj(f'efp{x}{x}dn{y}up{z}up', cache_with_nfluid=0)   # caching improves speed if calculation is repeated.
             if ubase == 'momfef':
                 return front * Ex           # (qi ni) E  or  (qi/mi) E
         if ubase in ('momfb', 'momflorentz'):
@@ -896,7 +895,7 @@ def get_momentum_quant(obj, var, MOMENTUM_QUANT=None):
         # E is edge-centered, so we must shift all three coords.
         # Ex is at (0, -0.5, -0.5), so we shift by xdn, yup, zup
         # Meanwhile, scalars are at (0,0,0), so we shift those by xdn to align with u.
-        Ex = obj.get_var('ef'+x + x+'dn' + y+'up' + z+'up', cache_with_nfluid=0)
+        Ex = obj.get_var(f'efp{x}{x}dn{y}up{z}up', cache_with_nfluid=0)
         sum_nu_u = 0
         for jSL in obj.iter_fluid_SLs():
             if jSL != ifluid_orig:
@@ -934,9 +933,9 @@ def get_momentum_quant(obj, var, MOMENTUM_QUANT=None):
         # Meanwhile, E is edge-centered, so we must shift all three coords.
         # Ex is at (0, -0.5, -0.5), so we shift by xdn, yup, zup
         # Finally, scalars are at (0,0,0), so we shift those by xdn to align with u.
-        Ex = obj.get_var('ef'+x + x+'dn' + y+'up' + z+'up', cache_with_nfluid=0)
+        Ex = obj.get_var(f'efp{x}{x}dn{y}up{z}up', cache_with_nfluid=0)
         B2 = obj.get_var('b2' + x+'dn')
-        ExB__x = obj.get_var('ef_edgefacecrosstoface_b'+x)  # (E cross B)_x, 
+        ExB__x = obj.get_var('efp_edgefacecrosstoface_b'+x)  # (E cross B)_x, 
         nu_ij = obj.get_var('nu_ij' + x+'dn')
         # begin calculations
         q_over_m_nu = (qi/mi) / nu_ij
