@@ -21,7 +21,10 @@ from . import document_vars, file_memory, load_fromfile_quantities, stagger, too
 from .load_arithmetic_quantities import *
 # import internal modules
 from .load_quantities import *
-from .tools import *
+from .tools import *   # [TODO] explicit imports instead of import *
+from .tools import (
+    using_attrs, maintaining_attrs,
+)
 
 # defaults
 whsp = '  '
@@ -268,6 +271,22 @@ class BifrostData():
     kz = property(lambda self: 2*np.pi*np.fft.fftshift(np.fft.fftfreq(self.zLength, self.dz)),
                   doc='kz coordinates [simulation units] (fftshifted such that 0 is in the middle).')
     # ^ convert k to physical units by dividing by self.uni.usi_l  (or u_l for cgs)
+
+    ## ATTRIBUTE MANAGEMENT ##
+    # "using": sets attribute upon entry; restores original upon exit. Example:
+    # with bb.using(snap=5, units_output='simu'):
+    #    ...
+    # sets snap=5 and units_output='simu' upon entering the 'with' block;
+    # restores original value of snap and units_output upon exiting the 'with' block.
+    using_attrs = using_attrs
+    using = using_attrs
+
+    # "maintaining": restores original attribute value. Example:
+    # with bb.maintaining('snap', 'units_output'):
+    #    ...
+    # restores original value of snap and units_output upon exiting the 'with' block.
+    maintaining_attrs = maintaining_attrs
+    maintaining = maintaining_attrs
 
     ## SET SNAPSHOT ##
     def __getitem__(self, i):
