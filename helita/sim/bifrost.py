@@ -436,18 +436,23 @@ class BifrostData():
                     self.nzb = self.nz + 2 * self.nb
                 else:
                     self.nzb = self.nz
+            except KeyError:
+                self.nzb = self.nz
+            try:
                 if (np.all((params['boundarychky'] == 1)) and (np.all(params['isnap'] != 0) or np.all(self.snap != 0))):
                     self.nyb = self.ny + 2 * self.nb
                 else:
                     self.nyb = self.ny
+            except KeyError:
+                self.nyb = self.ny
+            try: 
                 if (np.all((params['boundarychkx'] == 1)) and (np.all(params['isnap'] != 0) or np.all(self.snap != 0))):
                     self.nxb = self.nx + 2 * self.nb
                 else:
                     self.nxb = self.nx
             except KeyError:
-                self.nzb = self.nz
-                self.nyb = self.ny
                 self.nxb = self.nx
+                
             # check if units are there, if not use defaults and print warning
             unit_def = {'u_l': 1.e8, 'u_t': 1.e2, 'u_r': 1.e-7,
                         'u_b': 1.121e3, 'u_ee': 1.e12}
