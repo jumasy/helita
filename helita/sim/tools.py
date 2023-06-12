@@ -402,6 +402,29 @@ class MaintainingAttrs():
             setattr(self.obj, attr, val)
 
 
+def maintaining_attrs(self, *attrs):
+    '''returns context manager which restores attrs of self to their original values, upon exit.'''
+    return MaintainingAttrs(self, *attrs)
+
+
+class UsingAttrs(MaintainingAttrs):
+    '''context manager which sets attrs of obj upon entry; restores original values upon exit.'''
+
+    def __init__(self, obj, **attrs):
+        self.obj = obj
+        self.attrs = attrs
+
+    def __enter__(self):
+        super().__enter__()
+        for attr, val in self.attrs.items():
+            setattr(self.obj, attr, val)
+
+
+def using_attrs(self, **attrs):
+    '''returns context manager which sets attrs of obj upon entry; restores original values upon exit.'''
+    return UsingAttrs(self, **attrs)
+
+
 def with_attrs(**attrs_and_values):
     '''return decorator which sets attrs of object before running function then restores them after.
     It is assumed that obj is the first arg of function.

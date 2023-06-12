@@ -21,7 +21,10 @@ from . import document_vars, file_memory, load_fromfile_quantities, stagger, too
 from .load_arithmetic_quantities import *
 # import internal modules
 from .load_quantities import *
-from .tools import *
+from .tools import *   # [TODO] explicit imports instead of import *
+from .tools import (
+    using_attrs, maintaining_attrs,
+)
 
 # defaults
 whsp = '  '
@@ -268,6 +271,22 @@ class BifrostData():
     kz = property(lambda self: 2*np.pi*np.fft.fftshift(np.fft.fftfreq(self.zLength, self.dz)),
                   doc='kz coordinates [simulation units] (fftshifted such that 0 is in the middle).')
     # ^ convert k to physical units by dividing by self.uni.usi_l  (or u_l for cgs)
+
+    ## ATTRIBUTE MANAGEMENT ##
+    # "using": sets attribute upon entry; restores original upon exit. Example:
+    # with bb.using(snap=5, units_output='simu'):
+    #    ...
+    # sets snap=5 and units_output='simu' upon entering the 'with' block;
+    # restores original value of snap and units_output upon exiting the 'with' block.
+    using_attrs = using_attrs
+    using = using_attrs
+
+    # "maintaining": restores original attribute value. Example:
+    # with bb.maintaining('snap', 'units_output'):
+    #    ...
+    # restores original value of snap and units_output upon exiting the 'with' block.
+    maintaining_attrs = maintaining_attrs
+    maintaining = maintaining_attrs
 
     ## SET SNAPSHOT ##
     def __getitem__(self, i):
@@ -845,6 +864,9 @@ class BifrostData():
             - reshape result as appropriate (based on iix,iiy,iiz)
             - take mean if self.internal_means (disabled by default).
             - squeeze if self.squeeze_output (disabled by default).
+            - index by self.notmask if self.mask_output != False (disabled by default). (not compatible with squeeze_output)
+                if self.mask_output = None, returns val[self.notmask], directly.
+                if self.mask_output = True, returns self.unmasked_to_full(val[self.notmask]). I.e. appropriate shape, but with mask.
             - convert units as appropriate (based on self.units_output.)
                 - default is to keep result in simulation units, doing no conversions.
                 - if converting, note that any caching would happen in _load_quantity,
@@ -897,6 +919,20 @@ class BifrostData():
             if self.squeeze_output and (np.ndim(val) > 0):
                 #val = val.squeeze()  # << "naive" implementation; crashes if val.size==1 and val is memmap
                 val = np.asarray(val).squeeze()   # asarray prevents the crash by converting subclasses to numpy array first.
+
+            # index by self.notmask if self.mask_output is True or None. (disabled by default)
+            mask_output = getattr(self, 'mask_output', False)
+            if (mask_output != False) and (np.ndim(val) > 0):
+                if self.squeeze_output:
+                    raise ValueError('(mask_output!=False) incompatible with (squeeze_output=True)')
+                notmask = getattr(self, 'notmask', None)
+                if notmask is not None:
+                    val = val[notmask]
+                    if mask_output is not None:
+                        if mask_output == True:
+                            val = self.unmasked_to_full(val)
+                        else:
+                            raise ValueError(f'expected False, None, or True, but got mask_output={repr(mask_output)}')
 
             # convert units if we are using units_output != 'simu'.
             if self.units_output != 'simu':
@@ -1911,6 +1947,25 @@ class BifrostData():
         assert len(axes) == 2, f"require exactly 2 axes for get_kextent, but got {len(axes)}"
         kx, ky = self.get_kcoords(units=units, axes=axes)
         return tools.extent(kx, ky)
+
+    def unmasked_to_full(self, arr):
+        '''returns orignal_arr_but_with_mask given self.notmask and arr = original_arr[self.notmask].
+        original_arr_but_with_mask is original_arr but with a mask applied everywhere except self.notmask.
+
+        arr should have shape = (N, ...) where N = count_nonzero(self.notmask), and ... can be anything.
+        result will have shape = (*(self.notmask.shape), ...) where ... is same as in (N, ...) for arr.shape.
+
+        Useful to apply to output of getvar when self.output_notmasked = True.
+        '''
+        notmask = self.notmask
+        mask = ~ notmask  # mask = not notmask
+        shape = (*self.notmask.shape, *arr.shape[1:])
+        result = np.zeros_like(arr, shape=shape) + np.nan   # nan <--> don't use these values by accident.
+        result[notmask] = arr
+        # reshape appropriately & make masked array
+        mask_b0 = np.expand_dims(mask, axis=tuple(range(mask.ndim, mask.ndim + arr.ndim - 1)))
+        arr_b, mask_b1 = np.broadcast_arrays(result, mask_b0)
+        return np.ma.masked_array(arr_b, mask_b1)
 
     if file_memory.DEBUG_MEMORY_LEAK:
         def __del__(self):

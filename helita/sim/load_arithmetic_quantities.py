@@ -77,18 +77,26 @@ def _can_interp(obj, axis, warn=True):
     '''return whether we can interpolate. Make warning if we can't.
     must check before doing any stagger operation.
     pythonic stagger methods (e.g. 'numba', 'numpy') make this check on their own.
-    '''
-    if not obj.do_stagger:  # this is True by default; if it is False we assume that someone
-        return False       # intentionally turned off interpolation. So we don't make warning.
-    kind = getattr(obj, 'stagger_kind', stagger.DEFAULT_STAGGER_KIND)
 
-    if not getattr(obj, 'n'+axis, 0) >= 5:
-        if obj.verbose:
-            warnmsg = 'requested interpolation in {x:} but obj.n{x:} < 5. '.format(x=axis) +\
-                'We will skip this interpolation, and instead return the original value.'
-            warnings.warn(warnmsg)  # warn user we will not be interpolating! (dimension is too small)
-        return False
-    return True
+    [FIX](23/05/18, SE) just return obj.do_stagger.
+        If do_stagger False, behavior unchanged (was already returning False in that case).
+        If do_stagger True, now allows stagger method to handle the situation.
+            stagger.py is smart enough to deal with not-large-enough dimensions.
+            This fixes the issue of mesh location misalignment for non-3D simulations.
+            e.g. previously dd('nrzdn') was at [0,0,0] if mz=1. Now it is correctly at [0,0,-0.5].
+    '''
+    return obj.do_stagger
+    # if not obj.do_stagger:  # this is True by default; if it is False we assume that someone
+    #     return False       # intentionally turned off interpolation. So we don't make warning.
+    # kind = getattr(obj, 'stagger_kind', stagger.DEFAULT_STAGGER_KIND)
+
+    # if not getattr(obj, 'n'+axis, 0) >= 5:
+    #     if obj.verbose:
+    #         warnmsg = 'requested interpolation in {x:} but obj.n{x:} < 5. '.format(x=axis) +\
+    #             'We will skip this interpolation, and instead return the original value.'
+    #         warnings.warn(warnmsg)  # warn user we will not be interpolating! (dimension is too small)
+    #     return False
+    # return True
 
 
 ''' --------------------- functions to load quantities --------------------- '''

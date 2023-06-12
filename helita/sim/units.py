@@ -180,8 +180,6 @@ def ASSERT_UNIT_SYSTEM_OR(value, *alternates):
     VALID_VALUES = (*alternates, *UNIT_SYSTEMS)
     assert value in VALID_VALUES, f"expected unit system from {UNIT_SYSTEMS} or value in {alternates}, but got {value}"
 
-# UNITS_OUTPUT property
-
 
 def UNITS_OUTPUT_PROPERTY(internal_name='_units_output', default='simu'):
     '''creates a property which manages units_output.
