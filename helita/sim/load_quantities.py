@@ -1906,7 +1906,6 @@ def ionpopulation(obj, rho, nel, tg, elem='h', lvl='1', dens=True, **kwargs):
               "Units set to 'standard' Bifrost units.")
   '''
     uni = obj.uni
-    print(uni)
 
     totconst = 2.0 * uni.pi * uni.m_electron * uni.k_b / \
         uni.hplanck / uni.hplanck

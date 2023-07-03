@@ -331,7 +331,7 @@ def iter_fluid_SLs_and_names(dd, with_electrons=True, iset=False):
         also sets dd.ifluid to the SL as we iterate.
 
     with_electrons: bool
-        True --> electrons are included, first: ((-1,0),'e-').
+        True --> electrons are included, first: ((-1,0),'e').
         False --> electrons are not included.
     '''
     for SL in dd.iter_fluid_SLs(with_electrons=with_electrons, iset=iset):
@@ -344,7 +344,7 @@ def fluid_SLs_and_names(dd, with_electrons=True):
     See also: iter_fluid_SLs_and_names
 
     with_electrons: bool
-        True --> electrons are included, first: ((-1,0),'e-').
+        True --> electrons are included, first: ((-1,0),'e').
         False --> electrons are not included.
     '''
     return list(iter_fluid_SLs_and_names(dd, with_electrons=with_electrons))
@@ -358,11 +358,29 @@ def neutral_SLs_and_names(dd):
 
 @register_as_multifluid_func
 def charged_SLs_and_names(dd, with_electrons=True):
-    '''returns list of ((species, level), name) for neutral fluids in dd.
+    '''returns list of ((species, level), name) for charged fluids in dd.
     with electrons: bool, default True
-        whether to include electrons. If True, put electrons first. ((-1,0), 'e-')
+        whether to include electrons. If True, put electrons first. ((-1,0), 'e')
     '''
     return list((SL, name) for (SL, name) in iter_fluid_SLs_and_names(dd) if get_charge(dd, SL)!=0)
+
+
+@register_as_multifluid_func
+def charged_SLs(dd, with_electrons=True):
+    '''returns list of (species, level) for charged fluids in dd.
+    with electrons: bool, default True
+        whether to include electrons. If True, put electrons first. SL=(-1,0).
+    '''
+    return [SL for SL, name in dd.charged_SLs_and_names()]
+
+
+@register_as_multifluid_func
+def charged_names(dd, with_electrons=True):
+    '''returns list of (name) for charged fluids in dd.
+    with electrons: bool, default True
+        whether to include electrons. If True, put electrons first. name='e'.
+    '''
+    return [name for SL, name in dd.charged_SLs_and_names()]
 
 
 ''' --------------------- compare fluids --------------------- '''
