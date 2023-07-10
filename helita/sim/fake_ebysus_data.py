@@ -387,6 +387,15 @@ class FakeEbysusData(ebysus.EbysusData):
 
     unset_nonfundamentals = unset_non_fundamentals = keep_only_fundamentals = unset_extras   # aliases
 
+    def unset_all(self):
+        '''unsets the values of all vars which have been set.
+        returns the list of all vars which were just unset.
+        '''
+        result = list(self.setvars.keys())
+        self.setvars.clear()
+        self._signal_set_var(var=None)
+        return result
+
     ## ITER FUNDAMENTALS ##
     def iter_fundamentals(self, b=True, r=True, p=True, e=True, AXES=AXES):
         '''iterate through fundamental vars:
