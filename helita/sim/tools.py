@@ -1,9 +1,10 @@
 # import built-in modules
 import os
-import fnmatch
-import warnings
-import functools
 import collections
+import fnmatch
+import functools
+import importlib
+import warnings
 
 # import external public modules
 import numpy as np
@@ -644,6 +645,28 @@ class ImportFailed():
         if len(str_add) > 0:
             str_add = '. ' + str_add
         raise ImportFailedError(self.modulename + str_add)
+
+    def __repr__(self):
+        return f'{type(self).__name__}({repr(self.modulename)})'
+
+
+def import_relative(name, globals):
+    '''import a module relative to the caller's package; caller must provide globals().
+    Examples: inside helita.sim.ebysus,
+        import_relative('.bifrost', globals()) <- equivalent -> import helita.sim.bifrost
+        import_relative('..utils.fitting', globals()) <- equivalent -> import helita.utils.fitting
+    returns the imported module.
+    '''
+    package = globals['__package__']
+    return importlib.import_module(name, package=package)
+
+
+def try_import_relative(name, globals):
+    '''try import_relative; return the imported module if successful, else an ImportFailed object.'''
+    try:
+        return import_relative(name, globals)
+    except ImportError:
+        return ImportFailed(f'{name} (relative to {repr(globals["__package__"])})')
 
 
 def boring_decorator(*args, **kw):
