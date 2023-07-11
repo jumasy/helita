@@ -232,7 +232,8 @@ class FakeEbysusData(ebysus.EbysusData):
         # else
         return self._raw_load_quantity(var, *args, **kwargs)
 
-    FUNDAMENTAL_SETTABLES = ('r', 'nr', 'e', 'tg', *(f'{v}{x}' for x in AXES for v in ('p', 'u', 'ui', 'b')))
+    FUNDAMENTAL_SETTABLES = ('r', 'nr', 'e', 'tg',
+                             *(f'{v}{x}' for x in AXES for v in ('p', 'u', 'ui', 'b', 'j')))
 
     def set_fundamental_var(self, var, value, *args, fundamental_only=True, units=None, **kwargs):
         '''sets fundamental quantity corresponding to var; also sets var (unless fundamental_only).
@@ -241,6 +242,7 @@ class FakeEbysusData(ebysus.EbysusData):
             e - tg, p
             p{x} - u{x}, ui{x}   (for {x} in 'x', 'y', 'z')
             b{x} – (no alternates.)
+            j{x} - (no alternates.) (fundamental only if ndim < 3; it depends on curl(B))
 
         fundamental_only: True (default) or False
             True  --> only set value of fundamental quantity corresponding to var.
@@ -322,6 +324,15 @@ class FakeEbysusData(ebysus.EbysusData):
             fundvar = f'b{x}'
             if base == 'b':
                 ukey = 'b'
+                also_set_var = False
+                value_simu = value * u_in2simu(ukey)
+                fundval_simu = value_simu
+        # # 'j{x}' - current density ({x}-component)
+        elif var in tuple(f'j{x}' for x in AXES):
+            base, x = var[:-1], var[-1]
+            fundvar = f'j{x}'
+            if base == 'j':
+                ukey = 'i'
                 also_set_var = False
                 value_simu = value * u_in2simu(ukey)
                 fundval_simu = value_simu
@@ -532,12 +543,18 @@ class FakeEbysusData(ebysus.EbysusData):
         self.set_var(f'{var}y', vec[..., 1], *args__set_var, **kw__set_var)
         self.set_var(f'{var}z', vec[..., 2], *args__set_var, **kw__set_var)
 
-    def rotation_align(self, var, target_vector):
+    def rotation_align(self, var, target_vector, *, repeat=1):
         '''rotates all fundamental vars according to the rotation which aligns var with target vector.
         Example:
             var=='ef', target_vector==[0,0,1]
             calculates rotation = rotation required to align electric field with z direction.
             rotates 'b', 'p', 'j' by rotation.
+
+        repeat: int, default 1
+            number of times to repeat the rotation algorithm.
+            Repeating the rotation multiple times increases the precision.
+            E.g. after 1 rotation of 'ef' towards [0,0,1], might still have 'efx' ~= 1e-6.
+            After a second rotation, towards [0,0,1], 'efx' might decrease to ~=1e-12 or less.
 
         returns value of var aligned with target_vector.
         '''
@@ -552,7 +569,9 @@ class FakeEbysusData(ebysus.EbysusData):
             self.set_vec('p', new_p, fundemental_only=True)
         # current density  (simu units -- set_var still needs simu units for non-fundamental vars)
         new_j = rot.rotate_var('j')
-        new_j_simu = new_j * self.uni('i', 'simu', self.units_output)
-        self.set_vec('j', new_j_simu, units='simu')
+        self.set_vec('j', new_j, fundamental_only=True)
+        # repeat if requested
+        if repeat > 0:
+            result = self.rotation_align(result, target_vector, repeat=repeat - 1)
         # return result
         return result
