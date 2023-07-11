@@ -124,8 +124,8 @@ class FakeEbysusData(ebysus.EbysusData):
         '''
 
     ## SET_VAR ##
-    def set_var(self, var, value, *args, nfluid=None, units=None, fundamental=None,
-                _skip_preprocess=False, fundamental_only=False, **kwargs):
+    def set_var(self, var, value, *args, nfluid=None, units=None, usi_key=None, ucgs_key=None,
+                fundamental=None, _skip_preprocess=False, fundamental_only=False, **kwargs):
         '''set var in memory of self.
         Use this to set the value for some fake data.
         Any time we get var, we will check memory first;
@@ -149,6 +149,11 @@ class FakeEbysusData(ebysus.EbysusData):
              given units_output='simu'. This usually means values are stored in simulation units.)
             None --> use self.units_input.
             else --> use the value of this kwarg.
+        usi_key: None or str
+            if provied, use units='simu', and set value=self.uni(usi_key, 'simu', 'si').
+            i.e., this should be the string used to look up units for this var in self.uni.
+        ucgs_key: None or str
+            similar to usi_key, except would use self.uni(ucgs_key, 'simu', 'cgs').
         fundamental: None (default), True, or False
             None --> check first if var is in self.FUNDAMENTAL_SETTABLES.
                      if it is, use set_fundamental_var instead.
@@ -171,8 +176,16 @@ class FakeEbysusData(ebysus.EbysusData):
                     (1)  sets 'tg' to 4321. (AND 'e' appropriately, if fundamental is True or None.)
                     (2)  adjusts the value of 'e' (only)
                     (3)  gives the answer 4321, because it reads the value of 'tg' directly, instead of checking 'e'.
-
         '''
+        if usi_key is not None:
+            assert units is None, "don't provide usi_key AND units!"
+            units = 'simu'
+            value = value * self.uni(usi_key, 'simu', 'si')
+        elif ucgs_key is not None:
+            assert units is None, "don't provide ucgs_key AND units!"
+            units = 'simu'
+            value = value * self.uni(ucgs_key, 'simu', 'cgs')
+
         if fundamental is None:
             if var in self.FUNDAMENTAL_SETTABLES:
                 fundamental = True
@@ -193,7 +206,11 @@ class FakeEbysusData(ebysus.EbysusData):
         # bookkeeping - units
         units_input = units if units is not None else self.units_input
         if units_input != 'simu':
-            raise NotImplementedError(f'set_var(..., units={repr(units_input)})')
+            errmsg = (f'set_var(..., units={repr(units_input)})'
+                    "\nYou can either convert value to simu units and use units='simu'"
+                    "\nOr use usi_key (for SI value) or ucgs_key (for cgs value)."
+                    f"\nSee help({type(self)}.set_var) for details.")
+            raise NotImplementedError(errmsg)
 
         # save to memory.
         meta = self._metadata(with_nfluid=nfluid)
