@@ -92,7 +92,7 @@ MATCH_TYPE_DEFAULT = MATCH_PHYSICS  # can change this one. Tells whether to matc
 AXES = ('x', 'y', 'z')
 
 
-class EbysusData(BifrostData, fluid_tools.Multifluid):
+class EbysusData(fluid_tools.Multifluid, BifrostData):
 
     """
     Class to hold data from Multifluid/multispecies simulations

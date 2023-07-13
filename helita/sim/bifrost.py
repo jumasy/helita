@@ -1604,6 +1604,67 @@ class BifrostData(Plottable3D):
         tt = self.get_coord('t')
         return (tt[..., 1:] + tt[..., :-1]) / 2
 
+    ## FLUIDS METHODS ##
+    def get_mass(self, specie, units='amu'):
+        '''return specie's mass [units]. default units is amu.
+        
+        specie: str
+            one of the keys in self.uni.weightdic.keys(), or 'e' for electrons.
+        units: one of: ['amu', 'g', 'kg', 'cgs', 'si', 'simu']. Default 'amu'
+            'amu'        -> mass in amu.    For these units, mH ~= 1
+            'g' or 'cgs' -> mass in grams.  For these units, mH ~= 1.66E-24
+            'kg' or 'si' -> mass in kg.     For these units, mH ~= 1.66E-27
+            'simu'       -> mass in simulation units.
+        if specie is None, use specie = obj.mf_ispecies
+        '''
+        units = units.lower()
+        VALID_UNITS = ['amu', 'g', 'kg', 'cgs', 'si', 'simu']
+        assert units in VALID_UNITS, "Units invalid; got units={}".format(units)
+        if specie == 'e':
+            # electron
+            if units == 'amu':
+                return self.uni.m_electron / self.uni.amu
+            elif units in ['g', 'cgs']:
+                return self.uni.m_electron
+            elif units in ['kg', 'si']:
+                return self.uni.msi_e
+            else:  # units == 'simu'
+                return self.uni.simu_m_e
+        else:
+            # not electron
+            m_amu = self.uni.weightdic[specie]
+            if units == 'amu':
+                return m_amu
+            elif units in ['g', 'cgs']:
+                return m_amu * self.uni.amu
+            elif units in ['kg', 'si']:
+                return m_amu * self.uni.amusi
+            else:  # units == 'simu'
+                return m_amu * self.uni.simu_amu
+
+    def get_charge(self, charge=1, units='e'):
+        '''return the charge in the selected unit system.
+        charge: int
+            use -1 for electrons, +N for an Nth-ionized ion. (e.g. N=2 for He++)
+        units: one of ['e', 'elementary', 'esu', 'c', 'cgs', 'si', 'simu']. Default 'e'.
+            'e' or 'elementary' -> charge in elementary charge units. For these units, qH+ ~= 1.
+            'c' or 'si'         -> charge in SI units (Coulombs).     For these units, qH+ ~= 1.6E-19
+            'esu' or 'cgs'      -> charge in cgs units (esu).         For these units, qH+ ~= 4.8E-10
+            'simu'              -> charge in simulation units.
+        '''
+        units = units.lower()
+        VALID_UNITS = ['e', 'elementary', 'esu', 'c', 'cgs', 'si', 'simu']
+        assert units in VALID_UNITS, "Units invalid; got units={}".format(units)
+        # convert to proper units and return:
+        if units in ['e', 'elementary']:
+            return charge
+        elif units in ['esu', 'cgs']:
+            return charge * self.uni.q_electron
+        elif units in ['c', 'si']:
+            return charge * self.uni.qsi_electron
+        else:  # units=='simu'
+            return charge * self.uni.simu_qsi_e
+
     ## MISC. CONVENIENCE METHODS ##
     def print_stats(self, value, *args, printing_stats=True, **kwargs):
         '''print stats of value, via tools.print_stats.
