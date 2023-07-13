@@ -40,7 +40,7 @@ class Plottable3D():
         return (var, vals)
 
     def imshow(self, var_or_vals, axes=None, *, at_x=None, at_y=None, at_z=None,
-               log=False,
+               log=False, usi_key=None, ucgs_key=None,
                coord_units='si', xcoord_transform=None, ycoord_transform=None,
                colorbar=True, cbar_label=None, kw_cbar=dict(), sca_cbar=False,
                origin=NO_VALUE, extent=NO_VALUE, flipz=False,
@@ -64,6 +64,10 @@ class Plottable3D():
             E.g., if at_y=7, then the array to plot will be var_or_vals[:, 7, :].
         log: bool, default False
             if True, take log10(abs(vals)) before plotting.
+        usi_key: None or str
+            if provided, convert to si via val=val*self.uni(usi_key, 'si', self.units_output)
+        ucgs_key: None or str
+            if provided, convert to cgs via val=val*self.uni(ucgs_key, 'cgs', self.units_output)
         coord_units: str
             units for coords of axes. 'si', 'cgs', or 'simu'.
         xcoord_transform, ycoord_transform: None or callable of one argument
@@ -100,6 +104,12 @@ class Plottable3D():
         # figure out the array & axes to use
         var, vals = self._get_plottable_var_and_vals(var_or_vals)
         array, axes = _get_plottable_array_and_axes(vals, axes=axes, at_x=at_x, at_y=at_y, at_z=at_z, _ndim=2)
+        if usi_key is not None and ucgs_key is not None:
+            raise ValueError("cannot provide BOTH usi_key and ucgs_key")
+        if usi_key is not None:
+            array = array * self.uni(usi_key, 'si', self.units_output)
+        if ucgs_key is not None:
+            array = array * self.uni(ucgs_key, 'cgs', self.units_output)
         if log:
             array = np.log10(np.abs(array))
         array_to_plot = array if (axes[0] > axes[1]) else array.T  # get the orientation correct.
@@ -127,11 +137,15 @@ class Plottable3D():
         xlabel = f'{_axis_to_str(axes[0])}' + (f' [{coord_units}]' if xcoord_transform is None else '')
         ylabel = f'{_axis_to_str(axes[1])}' + (f' [{coord_units}]' if ycoord_transform is None else '')
         plt.xlabel(xlabel); plt.ylabel(ylabel)
-        if var is not None:
-            varunits = getattr(self, 'units_output', None)
-            title = f'{var} [{varunits}]' if varunits is not None else var
+        if usi_key is not None:
+            varunits = 'si'
+        elif ucgs_key is not None:
+            varunits = 'cgs'
         else:
-            title = 'var=???'
+            varunits = getattr(self, 'units_output', None)
+        if var is None:
+            var = 'var=???'
+        title = var if varunits is None else f'{var} [{varunits}]'
         if log:
             title = f'log10(| {title} |)'
         plt.title(title)
