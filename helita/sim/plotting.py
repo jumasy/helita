@@ -40,6 +40,7 @@ class Plottable3D():
         return (var, vals)
 
     def imshow(self, var_or_vals, axes=None, *, at_x=None, at_y=None, at_z=None,
+               log=False,
                coord_units='si', xcoord_transform=None, ycoord_transform=None,
                colorbar=True, cbar_label=None, kw_cbar=dict(), sca_cbar=False,
                origin=NO_VALUE, extent=NO_VALUE, flipz=False,
@@ -61,6 +62,8 @@ class Plottable3D():
         at_x, at_y, at_z: None or int
             index along this axis to choose. provide at most one of these values.
             E.g., if at_y=7, then the array to plot will be var_or_vals[:, 7, :].
+        log: bool, default False
+            if True, take log10(abs(vals)) before plotting.
         coord_units: str
             units for coords of axes. 'si', 'cgs', or 'simu'.
         xcoord_transform, ycoord_transform: None or callable of one argument
@@ -97,6 +100,9 @@ class Plottable3D():
         # figure out the array & axes to use
         var, vals = self._get_plottable_var_and_vals(var_or_vals)
         array, axes = _get_plottable_array_and_axes(vals, axes=axes, at_x=at_x, at_y=at_y, at_z=at_z, _ndim=2)
+        if log:
+            array = np.log10(np.abs(array))
+        array_to_plot = array if (axes[0] > axes[1]) else array.T  # get the orientation correct.
         # get the coordinates
         xcoord, ycoord = self.get_coords(units=coord_units, axes=axes)
         if xcoord_transform is not None:
@@ -113,7 +119,6 @@ class Plottable3D():
         if origin is NO_VALUE:
             origin = 'upper' if flipz else 'lower'
         # actually plot the image
-        array_to_plot = array if (axes[0] > axes[1]) else array.T  # get the orientation correct.
         result = plt.imshow(array_to_plot, extent=extent,
                             origin=origin, interpolation=interpolation,
                             **kw__imshow)
@@ -125,7 +130,11 @@ class Plottable3D():
         if var is not None:
             varunits = getattr(self, 'units_output', None)
             title = f'{var} [{varunits}]' if varunits is not None else var
-            plt.title(title)
+        else:
+            title = 'var=???'
+        if log:
+            title = f'log10(| {title} |)'
+        plt.title(title)
         # handle the colorbar
         if colorbar:
             cax = make_cax()
