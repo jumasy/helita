@@ -857,7 +857,13 @@ class BifrostData(Plottable3D):
             cgsunits = 1.0
 
         # get value of variable.
-        val = self._load_quantity(var, cgsunits=cgsunits, **kwargs)
+        try:
+            val = self._load_quantity(var, cgsunits=cgsunits, **kwargs)
+        except:  # okay to except all because we will raise immediately
+            # restore original slice.
+            if self.do_stagger and not self._getting_internal_var():
+                self.set_domain_iiaxes(*original_slice, internal=False)
+            raise
 
         # do post-processing
         val = self._get_var_postprocess(val, var=var, original_slice=original_slice, printing_stats=printing_stats)
