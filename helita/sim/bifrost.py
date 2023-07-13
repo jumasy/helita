@@ -19,8 +19,10 @@ from scipy.ndimage import map_coordinates
 
 from . import document_vars, file_memory, load_fromfile_quantities, stagger, tools, units
 from .load_arithmetic_quantities import *
+
 # import internal modules
 from .load_quantities import *
+from .plotting import Plottable3D
 from .tools import *   # [TODO] explicit imports instead of import *
 from .tools import (
     using_attrs, maintaining_attrs,
@@ -33,7 +35,7 @@ AXES = ('x', 'y', 'z')
 # BifrostData class
 
 
-class BifrostData():
+class BifrostData(Plottable3D):
     """
     Reads data from Bifrost simulations in native format.
 

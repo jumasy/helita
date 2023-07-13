@@ -40,6 +40,7 @@ from .tools import (
     units_title, convertcsgsi, globalvars,
     # API
     apply, is_integer, format_docstring,
+    NO_VALUE,
     # coordinate transformations
     polar2cartesian, cartesian2polar, refine,
     # restore attrs
@@ -62,7 +63,8 @@ from .tools import (
     # vector rotations
     rotation_align, rotation_apply, RotationManager3D,
     # plotting
-    extent,
+    centered_extent1D, centered_extent, extent,
+    make_cax, make_colorbar_axis, make_colorbar_axes,
     # custom versions of builtins
     GenericDict, GenericDict_with_equals,
 )
