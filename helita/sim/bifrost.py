@@ -891,6 +891,10 @@ class BifrostData():
                 self.vardocs()
             return None
 
+        # set original_slice if do_stagger and we are at the outermost layer.
+        if self.do_stagger and not self._getting_internal_var():
+            self.set_domain_iiaxes(*original_slice, internal=False)
+
         # handle "don't know how to get this var" case
         if val is None:
             errmsg = ('get_var: do not know (yet) how to calculate quantity {}. '
@@ -899,10 +903,6 @@ class BifrostData():
                       '\nIn addition, get_quantity can read others computed variables; '
                       "see e.g. help(self.get_var) or get_var('')) for guidance.")
             raise ValueError(errmsg.format(repr(var), repr(self.simple_vars)))
-
-        # set original_slice if do_stagger and we are at the outermost layer.
-        if self.do_stagger and not self._getting_internal_var():
-            self.set_domain_iiaxes(*original_slice, internal=False)
 
         # reshape if necessary... E.g. if var is a simple var, and iix tells to slice array.
         if (np.ndim(val) >= self.ndim) and (np.shape(val) != self.shape):
