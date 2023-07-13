@@ -822,19 +822,25 @@ class RotationManager3D():
         self.var = None   # << clear self.var.
         return self.rotate_vecs(vecs_source)
 
-    def align_var(self, var, vecs_destination):
+    def align_var(self, var, vecs_destination, *, c=True):
         '''does self.align_vec, using vecs_source = dd(f'{var}_vecxyz').
         Example:
             align_var('b', [0,0,1])
             sets self.rotation such that dd('b_vecxyz') is aligned with z direction
             returns self.rotate_vec(dd('b_vecxyz'))
         Also sets self.var, (but only if rotation calc succeeds).
+
+        c: bool, default True
+            if True, align vecxyzc instead of vecxyz.
+            I.e., perform stagger mesh centering of the values before rotating.
+
         returns result of self.align_vec, i.e. var_vecxyz aligned with vecs_destination.
         '''
         dd = self.dd
-        vec = dd(f'{var}_vecxyz')
+        vec = dd(f'{var}_vecxyz'+('c' if c else ''))
         result = self.align_vec(vec, vecs_destination)
         self.var = var
+        self.c = c
         return result
 
     def rotate_vecs(self, vecs):
@@ -848,11 +854,15 @@ class RotationManager3D():
         vec = np.stack([vx, vy, vz], axis=-1)
         return rotation_apply(rotation, vec)
 
-    def rotate_var(self, var):
+    def rotate_var(self, var, *, c=True):
         '''returns var rotated according to self.rotation.
         Equivalent to self.rotate_vecs(self.dd(f'{var}_vecxyz')).
+
+        c: bool, default True
+            if True, rotate vecxyzc instead of vecxyz.
+            I.e., perform stagger mesh centering of the values before rotating.
         '''
-        vec = self.dd(f'{var}_vecxyz')
+        vec = self.dd(f'{var}_vecxyz'+('c' if c else ''))
         return self.rotate_vecs(vec)
 
     def __repr__(self):
@@ -860,7 +870,7 @@ class RotationManager3D():
             vdstr = str(self.vecs_destination)
             if len(vdstr) > 100: vdstr = 'self.vecs_destination'  # abbreviated str(vecs_destination)
             if getattr(self, 'var', None) is not None:
-                content = f'aligning {repr(self.var)} with {vdstr}; getting var from {dd}'
+                content = f'aligning {repr(self.var)} with {vdstr}; getting var from {self.dd}'
             else:
                 content = f'aligning self.vecs_source with {vdstr}'
         else:

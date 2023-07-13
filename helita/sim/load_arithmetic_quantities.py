@@ -113,6 +113,7 @@ def load_arithmetic_quantities(obj, quant, *args__None, **kwargs__None):
 
     # tell which funcs to use for getting things. (funcs will be called in the order listed here)
     _getter_funcs = (
+        get_multi_quant,  # intentionally earlier in the order, so that e.g. "vecxyzc" will work.
         get_center, get_deriv, get_interp,
         get_module, get_horizontal_average,
         get_gradients_vect, get_gradients_scalar,
@@ -120,7 +121,6 @@ def load_arithmetic_quantities(obj, quant, *args__None, **kwargs__None):
         get_square, get_lg, get_numop, get_ratios, get_parens,
         get_projections, get_angle,
         get_stat_quant, get_fft_quant,
-        get_multi_quant,
         get_vector_product,   # this is intentionally later in the order, so that e.g. "(eftimesb)2" will work.
     )
 
@@ -1243,8 +1243,9 @@ def get_fft_quant(obj, quant):
 
 # default
 _MULTI_QUANT = ('MULTI_QUANT',
-                [fullcommand
+                [fullcommand + c
                  for command in ('vec', 'vecxyz', 'vecxy', 'vecyz', 'vecxz')
+                 for c in ('', 'c')
                  for fullcommand in ('_'+command, command+'_')]
                 )
 # get value
@@ -1257,14 +1258,15 @@ def get_multi_quant(obj, quant):
     if quant == '':
         docvar = document_vars.vars_documenter(obj, *_MULTI_QUANT, get_multi_quant.__doc__, uni=UNI.qc(0))
         for fmt in '{var}_{command}', '{command}_{var}':
-            for command in ('vec', 'vecxyz'):   # 'vec' and 'vecxyz' are aliases for each other.
-                docvar(fmt.format(var='', command=command),
-                       "'" + fmt.format(var='var', command=command) + "'" +
-                       " --> (varx, vary, varz) stacked along last axis (shape == (Nx, Ny, Nz, 3).")
-            for (x, y) in ('xy', 'yz', 'xz'):
-                docvar(fmt.format(var='', command=f'vec{x}{y}'),
-                       "'" + fmt.format(var='var', command=f'vec{x}{y}') + "'" +
-                       " --> (var{x}, var{y}) stacked along last axis (shape == (Nx, Ny, Nz, 2).")
+            for c in ('', 'c'):
+                for command in ('vec', 'vecxyz'):   # 'vec' and 'vecxyz' are aliases for each other.
+                    docvar(fmt.format(var='', command=f'{command}{c}'),
+                           "'" + fmt.format(var='var', command=f'{command}{c}') + "'" +
+                           f" --> (varx{c}, vary{c}, varz{c}) stacked along last axis (shape == (Nx, Ny, Nz, 3).")
+                for (x, y) in ('xy', 'yz', 'xz'):
+                    docvar(fmt.format(var='', command=f'vec{x}{y}{c}'),
+                           "'" + fmt.format(var='var', command=f'vec{x}{y}{c}') + "'" +
+                           f" --> (var{x}{c}, var{y}{c}) stacked along last axis (shape == (Nx, Ny, Nz, 2).")
         return None
 
     # interpret quant string
@@ -1276,8 +1278,14 @@ def get_multi_quant(obj, quant):
         fullcommand = command + '_'
         if fullcommand not in _MULTI_QUANT[1]:
             return None
+    if command[-1]=='c' and command != 'vec':  # e.g. 'vecc', or 'vecxyc'
+        c = 'c'
+        command = command[:-1]
+    else:
+        c = ''
     # now we have assigned:
-    #  command = command without underscore. e.g. 'vec'
+    #  c = 'c' if command implies vars should be centered (like "varyc") else ''
+    #  command = command without underscore, and without 'c'. e.g. 'vec'
     #  fullcommand = command with underscore. e.g. '_vec' or 'vec_'
     #  var = quant without command.
 
@@ -1290,9 +1298,8 @@ def get_multi_quant(obj, quant):
             axes = 'xyz'
         else:   # command is 'vecxy', 'vecyz', or 'vecxz'
             axes = command[-2:]
-        components = [obj(var+x) for x in axes]
+        components = [obj(var+x+c) for x in axes]
         return np.stack(components, axis=-1)
-
     else:
         raise NotImplementedError(f'command={repr(fullcommand)} in get_multi_quant')
 
