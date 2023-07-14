@@ -10,6 +10,7 @@ from .tools import (
     ImportFailed,
     NO_VALUE,
     centered_extent1D, centered_extent, make_cax,
+    format_docstring,
 )
 
 try:
@@ -159,6 +160,39 @@ class Plottable3D():
         else:
             return result
 
+    def set_defaults_alias(self, new_attr, original_attr, *, _instance=True, **defaults):
+        '''set self.new_attr = f(*args, **kw), where f does self.original_attr(*args, **kw, **defaults).
+        In case any kwargs appear in kw and defaults, use the ones in kw.
+
+        E.g. calling self.set_defaults_alias('imshowlog', 'imshow', log=True)
+            makes it so that self.imshowlog(*args, **kw) will call self.imshow(*args, **kw, log=True).
+            This just affects the default kwargs; if user enters one of them it will still use that,
+                e.g. self.imshowlog(*args, log=False) will call self.imshow(*args, log=False).
+
+        _instance: bool, default True
+            if True, assign result to this instance, only.
+            if False, assign result to type(self). I.e., all instances of this type.
+        '''
+        @format_docstring(original_attr=original_attr, defaults=defaults)
+        def _defaults_alias(self, *args, **kw):
+            '''alias to self.{original_attr}, with some of the default kwargs adjusted.
+            The new values of affected defaults are:
+                {defaults}
+            '''
+            __tracebackhide__ = True
+            kw_use = defaults.copy()
+            kw_use.update(kw)
+            return getattr(self, original_attr)(*args, **kw_use)
+        if _instance:
+            @format_docstring(doc=_defaults_alias.__doc__)
+            def _defaults_alias_instance(*args, **kw):
+                '''{doc}'''
+                __tracebackhide__ = True
+                return _defaults_alias(self, *args, **kw)
+            setattr(self, new_attr, _defaults_alias_instance)
+        else:
+            setattr(type(self), new_attr, _defaults_alias)
+
 
 ''' --------------------------- axis selection tools --------------------------- '''
 def _axis_to_int(axis):
@@ -224,12 +258,21 @@ def _get_plottable_array_and_axes(array, axes=None, *, at_x=None, at_y=None, at_
         at_x, at_y, or at_z cannot be used.
         axes must be provided, and have length equal to array.ndim
         if _ndim is provided, _ndim must be equal to array.ndim
-    if array.ndim >= 3D:
+    if array.ndim == 3:
         use axes and at_x, at_y, at_z to determine which axes to use.
         if those are all None, and _ndim < 3, look for dimensions with size 1, in array.shape[:3].
+    if array.ndim > 3:
+        try to squeeze the array after the third dimension. If still >3d, raise ValueError.
+        squeeze via np.squeeze(array, axis=tuple(range(3, array.ndim))).
     '''
     array = np.asanyarray(array)
     shape = array.shape
+    if array.ndim > 3:
+        try:
+            array = np.squeeze(array, axis=tuple(range(3, array.ndim)))
+        except ValueError:  # "cannot select an axis to squeeze out which has size not equal to one"
+            errmsg = f'array cannot be squeezed to ndim==3. array with ndim={array.ndim}, shape={shape}.'
+            raise ValueError(errmsg) from None
     if array.ndim < 3:
         if at_x is not None or at_y is not None or at_z is not None:
             raise ValueError(f'at_x, at_y, or at_z provided, but array.ndim={array.ndim} < 3')
