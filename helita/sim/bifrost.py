@@ -19,9 +19,14 @@ from scipy.ndimage import map_coordinates
 
 from . import document_vars, file_memory, load_fromfile_quantities, stagger, tools, units
 from .load_arithmetic_quantities import *
+
 # import internal modules
 from .load_quantities import *
-from .tools import *
+from .plotting import Plottable3D
+from .tools import *   # [TODO] explicit imports instead of import *
+from .tools import (
+    using_attrs, maintaining_attrs,
+)
 
 # defaults
 whsp = '  '
@@ -30,7 +35,7 @@ AXES = ('x', 'y', 'z')
 # BifrostData class
 
 
-class BifrostData():
+class BifrostData(Plottable3D):
     """
     Reads data from Bifrost simulations in native format.
 
@@ -269,6 +274,22 @@ class BifrostData():
                   doc='kz coordinates [simulation units] (fftshifted such that 0 is in the middle).')
     # ^ convert k to physical units by dividing by self.uni.usi_l  (or u_l for cgs)
 
+    ## ATTRIBUTE MANAGEMENT ##
+    # "using": sets attribute upon entry; restores original upon exit. Example:
+    # with bb.using(snap=5, units_output='simu'):
+    #    ...
+    # sets snap=5 and units_output='simu' upon entering the 'with' block;
+    # restores original value of snap and units_output upon exiting the 'with' block.
+    using_attrs = using_attrs
+    using = using_attrs
+
+    # "maintaining": restores original attribute value. Example:
+    # with bb.maintaining('snap', 'units_output'):
+    #    ...
+    # restores original value of snap and units_output upon exiting the 'with' block.
+    maintaining_attrs = maintaining_attrs
+    maintaining = maintaining_attrs
+
     ## SET SNAPSHOT ##
     def __getitem__(self, i):
         '''sets snap to i then returns self.
@@ -413,22 +434,27 @@ class BifrostData():
                     raise KeyError(('read_params: could not find '
                                     '%s in idl file!' % p))
             try:
-                if ((params['boundarychk'] == 1) and (params['isnap'] != 0)):
+                if (np.all((params['boundarychk'] == 1)) and (np.all(params['isnap'] != 0) or np.all(self.snap != 0))):
                     self.nzb = self.nz + 2 * self.nb
                 else:
                     self.nzb = self.nz
-                if ((params['boundarychky'] == 1) and (params['isnap'] != 0)):
+            except KeyError:
+                self.nzb = self.nz
+            try:
+                if (np.all((params['boundarychky'] == 1)) and (np.all(params['isnap'] != 0) or np.all(self.snap != 0))):
                     self.nyb = self.ny + 2 * self.nb
                 else:
                     self.nyb = self.ny
-                if ((params['boundarychkx'] == 1) and (params['isnap'] != 0)):
+            except KeyError:
+                self.nyb = self.ny
+            try: 
+                if (np.all((params['boundarychkx'] == 1)) and (np.all(params['isnap'] != 0) or np.all(self.snap != 0))):
                     self.nxb = self.nx + 2 * self.nb
                 else:
                     self.nxb = self.nx
             except KeyError:
-                self.nzb = self.nz
-                self.nyb = self.ny
                 self.nxb = self.nx
+                
             # check if units are there, if not use defaults and print warning
             unit_def = {'u_l': 1.e8, 'u_t': 1.e2, 'u_r': 1.e-7,
                         'u_b': 1.121e3, 'u_ee': 1.e12}
@@ -831,7 +857,13 @@ class BifrostData():
             cgsunits = 1.0
 
         # get value of variable.
-        val = self._load_quantity(var, cgsunits=cgsunits, **kwargs)
+        try:
+            val = self._load_quantity(var, cgsunits=cgsunits, **kwargs)
+        except:  # okay to except all because we will raise immediately
+            # restore original slice.
+            if self.do_stagger and not self._getting_internal_var():
+                self.set_domain_iiaxes(*original_slice, internal=False)
+            raise
 
         # do post-processing
         val = self._get_var_postprocess(val, var=var, original_slice=original_slice, printing_stats=printing_stats)
@@ -845,6 +877,9 @@ class BifrostData():
             - reshape result as appropriate (based on iix,iiy,iiz)
             - take mean if self.internal_means (disabled by default).
             - squeeze if self.squeeze_output (disabled by default).
+            - index by self.notmask if self.mask_output != False (disabled by default). (not compatible with squeeze_output)
+                if self.mask_output = None, returns val[self.notmask], directly.
+                if self.mask_output = True, returns self.unmasked_to_full(val[self.notmask]). I.e. appropriate shape, but with mask.
             - convert units as appropriate (based on self.units_output.)
                 - default is to keep result in simulation units, doing no conversions.
                 - if converting, note that any caching would happen in _load_quantity,
@@ -864,6 +899,10 @@ class BifrostData():
                 self.vardocs()
             return None
 
+        # set original_slice if do_stagger and we are at the outermost layer.
+        if self.do_stagger and not self._getting_internal_var():
+            self.set_domain_iiaxes(*original_slice, internal=False)
+
         # handle "don't know how to get this var" case
         if val is None:
             errmsg = ('get_var: do not know (yet) how to calculate quantity {}. '
@@ -872,10 +911,6 @@ class BifrostData():
                       '\nIn addition, get_quantity can read others computed variables; '
                       "see e.g. help(self.get_var) or get_var('')) for guidance.")
             raise ValueError(errmsg.format(repr(var), repr(self.simple_vars)))
-
-        # set original_slice if do_stagger and we are at the outermost layer.
-        if self.do_stagger and not self._getting_internal_var():
-            self.set_domain_iiaxes(*original_slice, internal=False)
 
         # reshape if necessary... E.g. if var is a simple var, and iix tells to slice array.
         if (np.ndim(val) >= self.ndim) and (np.shape(val) != self.shape):
@@ -897,6 +932,20 @@ class BifrostData():
             if self.squeeze_output and (np.ndim(val) > 0):
                 #val = val.squeeze()  # << "naive" implementation; crashes if val.size==1 and val is memmap
                 val = np.asarray(val).squeeze()   # asarray prevents the crash by converting subclasses to numpy array first.
+
+            # index by self.notmask if self.mask_output is True or None. (disabled by default)
+            mask_output = getattr(self, 'mask_output', False)
+            if (mask_output != False) and (np.ndim(val) > 0):
+                if self.squeeze_output:
+                    raise ValueError('(mask_output!=False) incompatible with (squeeze_output=True)')
+                notmask = getattr(self, 'notmask', None)
+                if notmask is not None:
+                    val = val[notmask]
+                    if mask_output is not None:
+                        if mask_output == True:
+                            val = self.unmasked_to_full(val)
+                        else:
+                            raise ValueError(f'expected False, None, or True, but got mask_output={repr(mask_output)}')
 
             # convert units if we are using units_output != 'simu'.
             if self.units_output != 'simu':
@@ -1555,6 +1604,67 @@ class BifrostData():
         tt = self.get_coord('t')
         return (tt[..., 1:] + tt[..., :-1]) / 2
 
+    ## FLUIDS METHODS ##
+    def get_mass(self, specie, units='amu'):
+        '''return specie's mass [units]. default units is amu.
+        
+        specie: str
+            one of the keys in self.uni.weightdic.keys(), or 'e' for electrons.
+        units: one of: ['amu', 'g', 'kg', 'cgs', 'si', 'simu']. Default 'amu'
+            'amu'        -> mass in amu.    For these units, mH ~= 1
+            'g' or 'cgs' -> mass in grams.  For these units, mH ~= 1.66E-24
+            'kg' or 'si' -> mass in kg.     For these units, mH ~= 1.66E-27
+            'simu'       -> mass in simulation units.
+        if specie is None, use specie = obj.mf_ispecies
+        '''
+        units = units.lower()
+        VALID_UNITS = ['amu', 'g', 'kg', 'cgs', 'si', 'simu']
+        assert units in VALID_UNITS, "Units invalid; got units={}".format(units)
+        if specie == 'e':
+            # electron
+            if units == 'amu':
+                return self.uni.m_electron / self.uni.amu
+            elif units in ['g', 'cgs']:
+                return self.uni.m_electron
+            elif units in ['kg', 'si']:
+                return self.uni.msi_e
+            else:  # units == 'simu'
+                return self.uni.simu_m_e
+        else:
+            # not electron
+            m_amu = self.uni.weightdic[specie]
+            if units == 'amu':
+                return m_amu
+            elif units in ['g', 'cgs']:
+                return m_amu * self.uni.amu
+            elif units in ['kg', 'si']:
+                return m_amu * self.uni.amusi
+            else:  # units == 'simu'
+                return m_amu * self.uni.simu_amu
+
+    def get_charge(self, charge=1, units='e'):
+        '''return the charge in the selected unit system.
+        charge: int
+            use -1 for electrons, +N for an Nth-ionized ion. (e.g. N=2 for He++)
+        units: one of ['e', 'elementary', 'esu', 'c', 'cgs', 'si', 'simu']. Default 'e'.
+            'e' or 'elementary' -> charge in elementary charge units. For these units, qH+ ~= 1.
+            'c' or 'si'         -> charge in SI units (Coulombs).     For these units, qH+ ~= 1.6E-19
+            'esu' or 'cgs'      -> charge in cgs units (esu).         For these units, qH+ ~= 4.8E-10
+            'simu'              -> charge in simulation units.
+        '''
+        units = units.lower()
+        VALID_UNITS = ['e', 'elementary', 'esu', 'c', 'cgs', 'si', 'simu']
+        assert units in VALID_UNITS, "Units invalid; got units={}".format(units)
+        # convert to proper units and return:
+        if units in ['e', 'elementary']:
+            return charge
+        elif units in ['esu', 'cgs']:
+            return charge * self.uni.q_electron
+        elif units in ['c', 'si']:
+            return charge * self.uni.qsi_electron
+        else:  # units=='simu'
+            return charge * self.uni.simu_qsi_e
+
     ## MISC. CONVENIENCE METHODS ##
     def print_stats(self, value, *args, printing_stats=True, **kwargs):
         '''print stats of value, via tools.print_stats.
@@ -1911,6 +2021,25 @@ class BifrostData():
         assert len(axes) == 2, f"require exactly 2 axes for get_kextent, but got {len(axes)}"
         kx, ky = self.get_kcoords(units=units, axes=axes)
         return tools.extent(kx, ky)
+
+    def unmasked_to_full(self, arr):
+        '''returns orignal_arr_but_with_mask given self.notmask and arr = original_arr[self.notmask].
+        original_arr_but_with_mask is original_arr but with a mask applied everywhere except self.notmask.
+
+        arr should have shape = (N, ...) where N = count_nonzero(self.notmask), and ... can be anything.
+        result will have shape = (*(self.notmask.shape), ...) where ... is same as in (N, ...) for arr.shape.
+
+        Useful to apply to output of getvar when self.output_notmasked = True.
+        '''
+        notmask = self.notmask
+        mask = ~ notmask  # mask = not notmask
+        shape = (*self.notmask.shape, *arr.shape[1:])
+        result = np.zeros_like(arr, shape=shape) + np.nan   # nan <--> don't use these values by accident.
+        result[notmask] = arr
+        # reshape appropriately & make masked array
+        mask_b0 = np.expand_dims(mask, axis=tuple(range(mask.ndim, mask.ndim + arr.ndim - 1)))
+        arr_b, mask_b1 = np.broadcast_arrays(result, mask_b0)
+        return np.ma.masked_array(arr_b, mask_b1)
 
     if file_memory.DEBUG_MEMORY_LEAK:
         def __del__(self):

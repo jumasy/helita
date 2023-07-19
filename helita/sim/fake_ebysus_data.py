@@ -124,8 +124,8 @@ class FakeEbysusData(ebysus.EbysusData):
         '''
 
     ## SET_VAR ##
-    def set_var(self, var, value, *args, nfluid=None, units=None, fundamental=None,
-                _skip_preprocess=False, fundamental_only=False, **kwargs):
+    def set_var(self, var, value, *args, nfluid=None, units=None, usi_key=None, ucgs_key=None,
+                fundamental=None, _skip_preprocess=False, fundamental_only=False, **kwargs):
         '''set var in memory of self.
         Use this to set the value for some fake data.
         Any time we get var, we will check memory first;
@@ -149,6 +149,11 @@ class FakeEbysusData(ebysus.EbysusData):
              given units_output='simu'. This usually means values are stored in simulation units.)
             None --> use self.units_input.
             else --> use the value of this kwarg.
+        usi_key: None or str
+            if provied, use units='simu', and set value=self.uni(usi_key, 'simu', 'si').
+            i.e., this should be the string used to look up units for this var in self.uni.
+        ucgs_key: None or str
+            similar to usi_key, except would use self.uni(ucgs_key, 'simu', 'cgs').
         fundamental: None (default), True, or False
             None --> check first if var is in self.FUNDAMENTAL_SETTABLES.
                      if it is, use set_fundamental_var instead.
@@ -171,8 +176,16 @@ class FakeEbysusData(ebysus.EbysusData):
                     (1)  sets 'tg' to 4321. (AND 'e' appropriately, if fundamental is True or None.)
                     (2)  adjusts the value of 'e' (only)
                     (3)  gives the answer 4321, because it reads the value of 'tg' directly, instead of checking 'e'.
-
         '''
+        if usi_key is not None:
+            assert units is None, "don't provide usi_key AND units!"
+            units = 'simu'
+            value = value * self.uni(usi_key, 'simu', 'si')
+        elif ucgs_key is not None:
+            assert units is None, "don't provide ucgs_key AND units!"
+            units = 'simu'
+            value = value * self.uni(ucgs_key, 'simu', 'cgs')
+
         if fundamental is None:
             if var in self.FUNDAMENTAL_SETTABLES:
                 fundamental = True
@@ -193,7 +206,11 @@ class FakeEbysusData(ebysus.EbysusData):
         # bookkeeping - units
         units_input = units if units is not None else self.units_input
         if units_input != 'simu':
-            raise NotImplementedError(f'set_var(..., units={repr(units_input)})')
+            errmsg = (f'set_var(..., units={repr(units_input)})'
+                    "\nYou can either convert value to simu units and use units='simu'"
+                    "\nOr use usi_key (for SI value) or ucgs_key (for cgs value)."
+                    f"\nSee help({type(self)}.set_var) for details.")
+            raise NotImplementedError(errmsg)
 
         # save to memory.
         meta = self._metadata(with_nfluid=nfluid)
@@ -232,7 +249,8 @@ class FakeEbysusData(ebysus.EbysusData):
         # else
         return self._raw_load_quantity(var, *args, **kwargs)
 
-    FUNDAMENTAL_SETTABLES = ('r', 'nr', 'e', 'tg', *(f'{v}{x}' for x in AXES for v in ('p', 'u', 'ui', 'b')))
+    FUNDAMENTAL_SETTABLES = ('r', 'nr', 'e', 'tg',
+                             *(f'{v}{x}' for x in AXES for v in ('p', 'u', 'ui', 'b', 'j')))
 
     def set_fundamental_var(self, var, value, *args, fundamental_only=True, units=None, **kwargs):
         '''sets fundamental quantity corresponding to var; also sets var (unless fundamental_only).
@@ -241,6 +259,7 @@ class FakeEbysusData(ebysus.EbysusData):
             e - tg, p
             p{x} - u{x}, ui{x}   (for {x} in 'x', 'y', 'z')
             b{x} – (no alternates.)
+            j{x} - (no alternates.) (fundamental only if ndim < 3; it depends on curl(B))
 
         fundamental_only: True (default) or False
             True  --> only set value of fundamental quantity corresponding to var.
@@ -325,6 +344,15 @@ class FakeEbysusData(ebysus.EbysusData):
                 also_set_var = False
                 value_simu = value * u_in2simu(ukey)
                 fundval_simu = value_simu
+        # # 'j{x}' - current density ({x}-component)
+        elif var in tuple(f'j{x}' for x in AXES):
+            base, x = var[:-1], var[-1]
+            fundvar = f'j{x}'
+            if base == 'j':
+                ukey = 'i'
+                also_set_var = False
+                value_simu = value * u_in2simu(ukey)
+                fundval_simu = value_simu
         else:
             raise NotImplementedError(f'{var} in set_fundamental_var')
 
@@ -386,6 +414,15 @@ class FakeEbysusData(ebysus.EbysusData):
         return desetted
 
     unset_nonfundamentals = unset_non_fundamentals = keep_only_fundamentals = unset_extras   # aliases
+
+    def unset_all(self):
+        '''unsets the values of all vars which have been set.
+        returns the list of all vars which were just unset.
+        '''
+        result = list(self.setvars.keys())
+        self.setvars.clear()
+        self._signal_set_var(var=None)
+        return result
 
     ## ITER FUNDAMENTALS ##
     def iter_fundamentals(self, b=True, r=True, p=True, e=True, AXES=AXES):
@@ -515,3 +552,43 @@ class FakeEbysusData(ebysus.EbysusData):
         if np.shape(val) != self.shape:
             val = val + self.zero()
         return val
+
+    ## VECTORS / ROTATION ##
+    def set_vec(self, var, vec, *args__set_var, **kw__set_var):
+        '''self.set_var(varx, vec[..., 0]); self.set_var(vary, vec[..., 1]); self.set_var(varz, vec[..., 2]).'''
+        self.set_var(f'{var}x', vec[..., 0], *args__set_var, **kw__set_var)
+        self.set_var(f'{var}y', vec[..., 1], *args__set_var, **kw__set_var)
+        self.set_var(f'{var}z', vec[..., 2], *args__set_var, **kw__set_var)
+
+    def rotation_align(self, var, target_vector, *, repeat=1):
+        '''rotates all fundamental vars according to the rotation which aligns var with target vector.
+        Example:
+            var=='ef', target_vector==[0,0,1]
+            calculates rotation = rotation required to align electric field with z direction.
+            rotates 'b', 'p', 'j' by rotation.
+
+        repeat: int, default 1
+            number of times to repeat the rotation algorithm.
+            Repeating the rotation multiple times increases the precision.
+            E.g. after 1 rotation of 'ef' towards [0,0,1], might still have 'efx' ~= 1e-6.
+            After a second rotation, towards [0,0,1], 'efx' might decrease to ~=1e-12 or less.
+
+        returns value of var aligned with target_vector.
+        '''
+        rot = tools.RotationManager3D(dd=self)
+        result = rot.align_var(var, target_vector)
+        # magnetic field
+        new_b = rot.rotate_var('b')
+        self.set_vec('b', new_b, fundemental_only=True)
+        # momentum density
+        for _SL in self.iter_fluid_SLs(with_electrons=False, iset=True):
+            new_p = rot.rotate_var('p')  # for self.ifluid  (due to iset=True)
+            self.set_vec('p', new_p, fundemental_only=True)
+        # current density  (simu units -- set_var still needs simu units for non-fundamental vars)
+        new_j = rot.rotate_var('j')
+        self.set_vec('j', new_j, fundamental_only=True)
+        # repeat if requested
+        if repeat > 0:
+            result = self.rotation_align(result, target_vector, repeat=repeat - 1)
+        # return result
+        return result

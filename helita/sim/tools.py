@@ -1,9 +1,10 @@
 # import built-in modules
 import os
-import fnmatch
-import warnings
-import functools
 import collections
+import fnmatch
+import functools
+import importlib
+import warnings
 
 # import external public modules
 import numpy as np
@@ -299,6 +300,19 @@ def format_docstring(*args__format, **kw__format):
     return return_f_after_formatting_docstring
 
 
+def _new_not_allowed(cls, *args, **kw):
+    '''raises TypeError to indicate new instances of this class are not allowed.'''
+    raise TypeError(f'new instances of class {cls} are not allowed.')
+
+class _NO_VALUE():
+    ''' Use NO_VALUE to indicate the absense of a value.'''
+    def __repr__(self):
+        return 'NO_VALUE'
+
+NO_VALUE = _NO_VALUE()
+_NO_VALUE.__new__ = _new_not_allowed
+
+
 ''' --------------------------- coordinate transformations --------------------------- '''
 
 
@@ -400,6 +414,29 @@ class MaintainingAttrs():
     def __exit__(self, exc_type, exc_value, traceback):
         for attr, val in self.memory.items():
             setattr(self.obj, attr, val)
+
+
+def maintaining_attrs(self, *attrs):
+    '''returns context manager which restores attrs of self to their original values, upon exit.'''
+    return MaintainingAttrs(self, *attrs)
+
+
+class UsingAttrs(MaintainingAttrs):
+    '''context manager which sets attrs of obj upon entry; restores original values upon exit.'''
+
+    def __init__(self, obj, **attrs):
+        self.obj = obj
+        self.attrs = attrs
+
+    def __enter__(self):
+        super().__enter__()
+        for attr, val in self.attrs.items():
+            setattr(self.obj, attr, val)
+
+
+def using_attrs(self, **attrs):
+    '''returns context manager which sets attrs of obj upon entry; restores original values upon exit.'''
+    return UsingAttrs(self, **attrs)
 
 
 def with_attrs(**attrs_and_values):
@@ -622,6 +659,28 @@ class ImportFailed():
             str_add = '. ' + str_add
         raise ImportFailedError(self.modulename + str_add)
 
+    def __repr__(self):
+        return f'{type(self).__name__}({repr(self.modulename)})'
+
+
+def import_relative(name, globals):
+    '''import a module relative to the caller's package; caller must provide globals().
+    Examples: inside helita.sim.ebysus,
+        import_relative('.bifrost', globals()) <- equivalent -> import helita.sim.bifrost
+        import_relative('..utils.fitting', globals()) <- equivalent -> import helita.utils.fitting
+    returns the imported module.
+    '''
+    package = globals['__package__']
+    return importlib.import_module(name, package=package)
+
+
+def try_import_relative(name, globals):
+    '''try import_relative; return the imported module if successful, else an ImportFailed object.'''
+    try:
+        return import_relative(name, globals)
+    except ImportError:
+        return ImportFailed(f'{name} (relative to {repr(globals["__package__"])})')
+
 
 def boring_decorator(*args, **kw):
     '''returns the identity wrapper (returns the function it wraps, without any changes).
@@ -739,25 +798,202 @@ def rotation_apply(rotations, vecs):
     return np.sum(rotations * np.expand_dims(vecs, axis=(-2)), axis=-1)
 
 
+class RotationManager3D():
+    '''convenient way to use the rotation_align and rotation_apply methods.
+    For rotating vectors such that one specific vector lines up with a certain direction.
+    The rotation may be different a different value at each point.
+
+    if provided, dd can be any callable object which will return a value when called as dd(varname)
+    [TODO] store dd internally as a weakref.
+    '''
+    def __init__(self, dd=None):
+        self.dd = dd
+
+    def align_vec(self, vecs_source, vecs_destination):
+        '''sets self.rotation = rotation_align(vecs_source, vecs_destination).
+        Also does bookkeeping if rotation calc succeeds:
+            set self.vecs_source & self.vecs_destination
+            set self.var = None
+        returns self.rotate_vecs(vecs_source)
+        '''
+        self.rotation = rotation_align(vecs_source, vecs_destination)
+        self.vecs_source = vecs_source
+        self.vecs_destination = vecs_destination
+        self.var = None   # << clear self.var.
+        return self.rotate_vecs(vecs_source)
+
+    def align_var(self, var, vecs_destination, *, c=True):
+        '''does self.align_vec, using vecs_source = dd(f'{var}_vecxyz').
+        Example:
+            align_var('b', [0,0,1])
+            sets self.rotation such that dd('b_vecxyz') is aligned with z direction
+            returns self.rotate_vec(dd('b_vecxyz'))
+        Also sets self.var, (but only if rotation calc succeeds).
+
+        c: bool, default True
+            if True, align vecxyzc instead of vecxyz.
+            I.e., perform stagger mesh centering of the values before rotating.
+
+        returns result of self.align_vec, i.e. var_vecxyz aligned with vecs_destination.
+        '''
+        dd = self.dd
+        vec = dd(f'{var}_vecxyz'+('c' if c else ''))
+        result = self.align_vec(vec, vecs_destination)
+        self.var = var
+        self.c = c
+        return result
+
+    def rotate_vecs(self, vecs):
+        '''returns rotation_apply(self.rotation, vecs).'''
+        rotation = self.rotation
+        return rotation_apply(rotation, vecs)
+
+    def rotate_vec(self, vx, vy, vz):
+        '''returns np.stack([vx, vy, vz], axis=-1) rotated based on self.rotation.'''
+        rotation = self.rotation
+        vec = np.stack([vx, vy, vz], axis=-1)
+        return rotation_apply(rotation, vec)
+
+    def rotate_var(self, var, *, c=True):
+        '''returns var rotated according to self.rotation.
+        Equivalent to self.rotate_vecs(self.dd(f'{var}_vecxyz')).
+
+        c: bool, default True
+            if True, rotate vecxyzc instead of vecxyz.
+            I.e., perform stagger mesh centering of the values before rotating.
+        '''
+        vec = self.dd(f'{var}_vecxyz'+('c' if c else ''))
+        return self.rotate_vecs(vec)
+
+    def __repr__(self):
+        if getattr(self, 'rotation', None) is not None:
+            vdstr = str(self.vecs_destination)
+            if len(vdstr) > 100: vdstr = 'self.vecs_destination'  # abbreviated str(vecs_destination)
+            if getattr(self, 'var', None) is not None:
+                content = f'aligning {repr(self.var)} with {vdstr}; getting var from {self.dd}'
+            else:
+                content = f'aligning self.vecs_source with {vdstr}'
+        else:
+            if getattr(self, dd, None) is not None:
+                content = f'dd={dd}'
+        return f'{type(self).__name__}({content})'
+
+
 ''' --------------------------- plotting --------------------------- '''
 
 
-def extent(xcoords, ycoords):
+def centered_extent1D(coords, *, L=None, ndim0_ok=False):
+    '''returns extent given coords (which should be sorted from min to max, and evenly spaced).
+    These are the limits such that the values will line up with pixel centers,
+    instead of the left and right edges of the plot.
+
+    if L is provided, ony the first and last values of coords are used, and L is used as the length of the array.
+
+    np.asanyarray(coords).squeeze() must have ndim <= 1. ndim==1 required if not ndim0_ok.
+    if ndim0_ok and ndim==0, return np.array([coords - 0.5, coords + 0.5]);
+    '''
+    coords = np.asanyarray(coords).squeeze()
+    assert coords.ndim <= 1
+    if ndim0_ok:
+        if coords.ndim == 0:
+            return np.array([coords[()] - 0.5, coords[()] + 0.5])
+    else:
+        assert coords.ndim != 0
+    if L is None:
+        L = len(coords)
+    npix = L - 1  # number of pixels across
+    dist = (coords[-1] - coords[0])   # full length across
+    d = dist / npix  # distance between pixel centers
+    # add half a pixel on each end.
+    return np.array([*(coords[0] + np.array([0 - d/2, dist + d/2]))])
+
+def centered_extent(xcoords, ycoords, *, Lx=None, Ly=None, shape=None, ndim0_ok=False):
     '''returns extent (to go to imshow), given xcoords, ycoords. Assumes origin='lower'.
     Use this method to properly align extent with middle of pixels.
     (Noticeable when imshowing few enough pixels that individual pixels are visible.)
 
+    This method handles: "Alignment is not centered if just using min & max of coordinate arrays."
+        (because e.g. in x, we want center of leftmost pixel to be min(xcoords),
+        but if you use extent=(min(xcoords),...) you will get that the _left_ of leftmost pixel is that value.
+        so, you need to add half a pixel on each side when determining the proper extent.)
+    
     xcoords and ycoords should be arrays.
     (This method uses their first & last values, and their lengths.)
+    if Lx and/or Ly are provided, use them as the lengths of coords instead.
+
+    np.asanyarray(coords).squeeze() must have ndim <= 1. ndim==1 required if not ndim0_ok.
+    if ndim0_ok and ndim==0, use np.array([coords - 0.5, coords + 0.5]) for those coords.
 
     returns extent == np.array([left, right, bottom, top]).
     '''
-    Nx = len(xcoords)
-    Ny = len(ycoords)
-    dx = (xcoords[-1] - xcoords[0])/Nx
-    dy = (ycoords[-1] - ycoords[0])/Ny
-    return np.array([*(xcoords[0] + np.array([0 - dx/2, dx * Nx + dx/2])),
-                     *(ycoords[0] + np.array([0 - dy/2, dy * Ny + dy/2]))])
+    return np.array([*centered_extent1D(xcoords, L=Lx, ndim0_ok=ndim0_ok),
+                     *centered_extent1D(ycoords, L=Ly, ndim0_ok=ndim0_ok)])
+
+extent = centered_extent  # alias
+
+def make_colorbar_axes(location='right', ticks_position=None, ax=None, pad=0.01, size=0.02):
+    ''' Creates an axis appropriate for putting a colorbar.
+
+    location: 'right' (default), 'left', 'top', or 'bottom'
+        location of colorbar relative to image.
+        Note: you will want to set orientation appropriately.
+    ticks_position: None (default), 'right', 'left', 'top', or 'bottom'
+        None -> ticks are on opposite side of colorbar from image.
+        string -> use this value to set ticks position.
+    ax: None or axes object
+        None -> use plt.gca()
+        this is the axes which will inform the size and position for cax.
+        it is appropriate to use ax = axes for the image.
+    pad: number (default 0.01)
+        padding between cax and ax.
+        TODO: what does the number really mean?
+    size: number (default 0.02)
+        size of colorbar.
+        TODO: what does the number really mean?
+
+    Adapted from https://stackoverflow.com/a/56900830.
+    Returns cax.
+    '''
+    import matplotlib.pyplot as plt  # << import inside so tools.py can still load even without mpl.
+    if ax is None:
+        ax = plt.gca()
+    p = ax.get_position()
+    # calculate cax params.
+    ## fig.add_axes(rect) has rect=[x, y, w, h],
+    ## where x and y are location for lower left corner of axes.
+    ## and w and h are width and height, respectively.
+    assert location in ('right', 'left', 'top', 'bottom')
+    if location in ('right', 'left'):
+        y = p.y0
+        h = p.height
+        w = size
+        if location == 'right':
+            x = p.x1 + pad
+        else: #'left'
+            x = p.x0 - pad
+    else: #'top' or 'bottom'
+        x = p.x0
+        w = p.width
+        h = size
+        if location == 'top':
+            x = p.y1 + pad
+        else: #'bottom'
+            x = p.y1 - pad
+
+    # make the axes
+    cax = plt.gcf().add_axes([x, y, w, h])
+    
+    # Change ticks position
+    if ticks_position is None:
+        ticks_position = location
+    if ticks_position in ('left', 'right'):
+        cax.yaxis.set_ticks_position(ticks_position)
+    else: #'top' or 'bottom'
+        cax.xaxis.set_ticks_position(ticks_position)
+
+    return cax
+
+make_cax = make_colorbar_axis = make_colorbar_axes  # alias
 
 
 ''' --------------------------- custom versions of builtins --------------------------- '''

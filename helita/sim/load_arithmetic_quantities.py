@@ -77,18 +77,26 @@ def _can_interp(obj, axis, warn=True):
     '''return whether we can interpolate. Make warning if we can't.
     must check before doing any stagger operation.
     pythonic stagger methods (e.g. 'numba', 'numpy') make this check on their own.
-    '''
-    if not obj.do_stagger:  # this is True by default; if it is False we assume that someone
-        return False       # intentionally turned off interpolation. So we don't make warning.
-    kind = getattr(obj, 'stagger_kind', stagger.DEFAULT_STAGGER_KIND)
 
-    if not getattr(obj, 'n'+axis, 0) >= 5:
-        if obj.verbose:
-            warnmsg = 'requested interpolation in {x:} but obj.n{x:} < 5. '.format(x=axis) +\
-                'We will skip this interpolation, and instead return the original value.'
-            warnings.warn(warnmsg)  # warn user we will not be interpolating! (dimension is too small)
-        return False
-    return True
+    [FIX](23/05/18, SE) just return obj.do_stagger.
+        If do_stagger False, behavior unchanged (was already returning False in that case).
+        If do_stagger True, now allows stagger method to handle the situation.
+            stagger.py is smart enough to deal with not-large-enough dimensions.
+            This fixes the issue of mesh location misalignment for non-3D simulations.
+            e.g. previously dd('nrzdn') was at [0,0,0] if mz=1. Now it is correctly at [0,0,-0.5].
+    '''
+    return obj.do_stagger
+    # if not obj.do_stagger:  # this is True by default; if it is False we assume that someone
+    #     return False       # intentionally turned off interpolation. So we don't make warning.
+    # kind = getattr(obj, 'stagger_kind', stagger.DEFAULT_STAGGER_KIND)
+
+    # if not getattr(obj, 'n'+axis, 0) >= 5:
+    #     if obj.verbose:
+    #         warnmsg = 'requested interpolation in {x:} but obj.n{x:} < 5. '.format(x=axis) +\
+    #             'We will skip this interpolation, and instead return the original value.'
+    #         warnings.warn(warnmsg)  # warn user we will not be interpolating! (dimension is too small)
+    #     return False
+    # return True
 
 
 ''' --------------------- functions to load quantities --------------------- '''
@@ -105,6 +113,7 @@ def load_arithmetic_quantities(obj, quant, *args__None, **kwargs__None):
 
     # tell which funcs to use for getting things. (funcs will be called in the order listed here)
     _getter_funcs = (
+        get_multi_quant,  # intentionally earlier in the order, so that e.g. "vecxyzc" will work.
         get_center, get_deriv, get_interp,
         get_module, get_horizontal_average,
         get_gradients_vect, get_gradients_scalar,
@@ -112,7 +121,6 @@ def load_arithmetic_quantities(obj, quant, *args__None, **kwargs__None):
         get_square, get_lg, get_numop, get_ratios, get_parens,
         get_projections, get_angle,
         get_stat_quant, get_fft_quant,
-        get_multi_quant,
         get_vector_product,   # this is intentionally later in the order, so that e.g. "(eftimesb)2" will work.
     )
 
@@ -417,7 +425,7 @@ _GRADVECT_QUANT = ('GRADVECT_QUANT',
                    ['divup', 'divdn', 'div',  # note: div must come after divup and divdn,
                     # since to check which quant to get we are checking .startswith,
                     # and 'divup' and 'divdn' both start with 'div'.
-                    'rot', 'she', 'curlcc', 'curvec',
+                    'rot', 'she', 'curlcc', 'curvec', 'facecurl', 'edgecurl',
                     'chkdiv', 'chbdiv', 'chhdiv']
                    )
 # get value
@@ -439,7 +447,9 @@ def get_gradients_vect(obj, quant):
         docvar('rot',     'starting with, rotational (a.k.a. curl) [simu units]', uni=UNI.quant_child(0))
         docvar('she',     'starting with, shear [simu units]', uni=UNI.quant_child(0))
         docvar('curlcc',  'starting with, curl but shifted (via interpolation) back to original location on cell [simu units]', uni=UNI.quant_child(0))
-        docvar('curvec',  'starting with, curl of face-centered vector (e.g. B, p) [simu units]', uni=UNI.quant_child(0))
+        docvar('curvec',  'starting with, curl of face-centered vector (e.g. B, p) [simu units]. Result is edge-centered.', uni=UNI.quant_child(0))
+        docvar('facecurl', 'starting with, curl of face-centered vector (e.g. B, p) [simu units]. Result is edge-centered.', uni=UNI.quant_child(0))
+        docvar('edgecurl', 'starting with, curl of edge-centered vector (e.g. E, J) [simu units]. Result is face-centered.', uni=UNI.quant_child(0))
         docvar('chkdiv',  'starting with, ratio of the divergence with the maximum of the abs of each spatial derivative [simu units]')
         docvar('chbdiv',  'starting with, ratio of the divergence with the sum of the absolute of each spatial derivative [simu units]')
         docvar('chhdiv',  'starting with, ratio of the divergence with horizontal averages of the absolute of each spatial derivative [simu units]')
@@ -530,16 +540,27 @@ def get_gradients_vect(obj, quant):
         dqy_dz = obj.get_var('d' + q + y + 'd' + z + 'dn' + z + 'up')
         return dqz_dy - dqy_dz
 
-    elif getq == 'curvec':  # curl of vector which is originally on face of cell
+    elif getq == 'curvec' or getq == 'facecurl':  # curl of vector which is originally on face of cell
         x = q[-1]  # axis, 'x', 'y', 'z'
         q = q[:-1]  # q without axis
         y, z = YZ_FROM_X[x]
         # interpolation notes:
         ## qz is at (0, 0, -0.5); dqzdydn is at (0, -0.5, -0.5)
         ## qy is at (0, -0.5, 0); dqydzdn is at (0, -0.5, -0.5)
-        dqz_dydn = obj.get_var('d' + q + z + 'd' + y + 'dn')
-        dqy_dzdn = obj.get_var('d' + q + y + 'd' + z + 'dn')
-        return dqz_dydn - dqy_dzdn
+        dqz_dy = obj.get_var(f'd{q}{z}d{y}dn')
+        dqy_dz = obj.get_var(f'd{q}{y}d{z}dn')
+        return dqz_dy - dqy_dz
+
+    elif getq == 'edgecurl':  # curl of vector which is originally on edge of cell
+        x = q[-1]  # axis, 'x', 'y', 'z'
+        q = q[:-1]  # q without axis
+        y, z = YZ_FROM_X[x]
+        # interpolation notes:
+        ## qz is at (-0.5, -0.5, 0); dqzdyup is at (-0.5, 0, 0)
+        ## qy is at (-0.5, 0, -0.5); dqydzup is at (-0.5, 0, 0)
+        dqz_dy = obj.get_var(f'd{q}{z}d{y}up')
+        dqy_dz = obj.get_var(f'd{q}{y}d{z}up')
+        return dqz_dy - dqy_dz
 
     elif getq in ['rot', 'she']:
         q = q[:-1]  # base variable
@@ -858,7 +879,8 @@ def get_projections(obj, quant):
 # default
 _VECTOR_PRODUCT_QUANT = \
     ('VECTOR_PRODUCT_QUANT',
-     ['times', '_facecross_', '_edgecross_', '_edgefacecross_',
+     ['times', '_facecross_', '_edgecross_',
+      '_edgefacecrosstoface_', '_edgefacecrosstoedge_',
       '_facecrosstocenter_', '_facecrosstoface_'
       ]
      )
@@ -878,9 +900,12 @@ def get_vector_product(obj, quant):
                                'result is edge-centered. E.g. result_x is at ( 0  , -0.5, -0.5).'))
         docvar('_edgecross_', ('cross product [simu units]. For two edge-centered vectors, such as E, I. '
                                'result is face-centered. E.g. result_x is at (-0.5,  0  ,  0  ).'))
-        docvar('_edgefacecross_', ('cross product [simu units]. A_edgefacecross_Bx gives x-component of A x B.'
+        docvar('_edgefacecrosstoface_', ('cross product [simu units]. A_edgefacecrosstoface_Bx gives x-component of A x B.'
                                    'A must be edge-centered (such as E, I); B must be face-centered, such as B, u.'
                                    'result is face-centered. E.g. result_x is at (-0.5,  0  ,  0  ).'))
+        docvar('_edgefacecrosstoedge_', ('cross product [simu units]. A_edgefacecrosstoedge_Bx gives x-component of A x B.'
+                                   'A must be edge-centered (such as E, I); B must be face-centered, such as B, u.'
+                                   'result is edge-centered. E.g. result_x is at ( 0  , -0.5, -0.5).'))
         docvar('_facecrosstocenter_', ('cross product for two face-centered vectors such as B, u. '
                                        'result is fully centered. E.g. result_x is at ( 0  ,  0  ,  0  ).'
                                        ' For most cases, it is better to use _facecrosstoface_'))
@@ -934,7 +959,7 @@ def get_vector_product(obj, quant):
         AxB__x = Ay * Bz - By * Az   # x component of A x B. (x='x', 'y', or 'z')
         return AxB__x
 
-    elif cross == '_edgefacecross_':
+    elif cross == '_edgefacecrosstoface_':
         # interpolation notes, for x='x', y='y', z='z':
         # resultx will be at (-0.5, 0, 0)
         # Ay is at (-0.5,  0  , -0.5). we must shift by   zup   to align with result.
@@ -947,6 +972,20 @@ def get_vector_product(obj, quant):
         By = obj.get_var(B+y + xdn+yup)
         Bz = obj.get_var(B+z + xdn+zup)
         AxB__x = Ay * Bz - By * Az   # x component of A x B. (x='x', 'y', or 'z')
+        return AxB__x
+
+    elif cross == '_edgefacecrosstoedge_':
+        # interpolation notes, for x='x', y='y', z='z':
+        # resultx will be at (0, -0.5, -0.5)
+        # Ay is at (-0.5,  0  , -0.5). we must shift by xup ydn to align with result.
+        # Az is at (-0.5, -0.5,  0  ). we must shift by xup zdn to align with result.
+        # By is at ( 0  , -0.5,  0  ). we must shift by   zdn   to align with result.
+        # Bz is at ( 0  ,  0  , -0.5). we must shift by   ydn   to align with result.
+        Ay = obj(f'{A}{y}{x}up{y}dn')
+        Az = obj(f'{A}{z}{x}up{z}dn')
+        By = obj(f'{B}{y}{z}dn')
+        Bz = obj(f'{B}{z}{y}dn')
+        AxB__x = Ay * Bz - By * Az   # x component of A cross B
         return AxB__x
 
     elif cross == '_facecrosstocenter_':
@@ -1204,8 +1243,9 @@ def get_fft_quant(obj, quant):
 
 # default
 _MULTI_QUANT = ('MULTI_QUANT',
-                [fullcommand
+                [fullcommand + c
                  for command in ('vec', 'vecxyz', 'vecxy', 'vecyz', 'vecxz')
+                 for c in ('', 'c')
                  for fullcommand in ('_'+command, command+'_')]
                 )
 # get value
@@ -1218,14 +1258,15 @@ def get_multi_quant(obj, quant):
     if quant == '':
         docvar = document_vars.vars_documenter(obj, *_MULTI_QUANT, get_multi_quant.__doc__, uni=UNI.qc(0))
         for fmt in '{var}_{command}', '{command}_{var}':
-            for command in ('vec', 'vecxyz'):   # 'vec' and 'vecxyz' are aliases for each other.
-                docvar(fmt.format(var='', command=command),
-                       "'" + fmt.format(var='var', command=command) + "'" +
-                       " --> (varx, vary, varz) stacked along last axis (shape == (Nx, Ny, Nz, 3).")
-            for (x, y) in ('xy', 'yz', 'xz'):
-                docvar(fmt.format(var='', command=f'vec{x}{y}'),
-                       "'" + fmt.format(var='var', command=f'vec{x}{y}') + "'" +
-                       " --> (var{x}, var{y}) stacked along last axis (shape == (Nx, Ny, Nz, 2).")
+            for c in ('', 'c'):
+                for command in ('vec', 'vecxyz'):   # 'vec' and 'vecxyz' are aliases for each other.
+                    docvar(fmt.format(var='', command=f'{command}{c}'),
+                           "'" + fmt.format(var='var', command=f'{command}{c}') + "'" +
+                           f" --> (varx{c}, vary{c}, varz{c}) stacked along last axis (shape == (Nx, Ny, Nz, 3).")
+                for (x, y) in ('xy', 'yz', 'xz'):
+                    docvar(fmt.format(var='', command=f'vec{x}{y}{c}'),
+                           "'" + fmt.format(var='var', command=f'vec{x}{y}{c}') + "'" +
+                           f" --> (var{x}{c}, var{y}{c}) stacked along last axis (shape == (Nx, Ny, Nz, 2).")
         return None
 
     # interpret quant string
@@ -1237,8 +1278,14 @@ def get_multi_quant(obj, quant):
         fullcommand = command + '_'
         if fullcommand not in _MULTI_QUANT[1]:
             return None
+    if command[-1]=='c' and command != 'vec':  # e.g. 'vecc', or 'vecxyc'
+        c = 'c'
+        command = command[:-1]
+    else:
+        c = ''
     # now we have assigned:
-    #  command = command without underscore. e.g. 'vec'
+    #  c = 'c' if command implies vars should be centered (like "varyc") else ''
+    #  command = command without underscore, and without 'c'. e.g. 'vec'
     #  fullcommand = command with underscore. e.g. '_vec' or 'vec_'
     #  var = quant without command.
 
@@ -1251,9 +1298,8 @@ def get_multi_quant(obj, quant):
             axes = 'xyz'
         else:   # command is 'vecxy', 'vecyz', or 'vecxz'
             axes = command[-2:]
-        components = [obj(var+x) for x in axes]
+        components = [obj(var+x+c) for x in axes]
         return np.stack(components, axis=-1)
-
     else:
         raise NotImplementedError(f'command={repr(fullcommand)} in get_multi_quant')
 

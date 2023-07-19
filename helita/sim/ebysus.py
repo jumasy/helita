@@ -60,7 +60,7 @@ from .load_arithmetic_quantities import load_arithmetic_quantities
 from .load_fromfile_quantities import load_fromfile_quantities
 from .load_mf_quantities import load_mf_quantities
 from .load_quantities import load_quantities
-from .units import U_TUPLE, UNI, UNI_rho, UNI_speed, Usym, UsymD
+from .units import U_TUPLE, UNI, UNI_rho, UNI_speed, Usym, UsymD, UNI_charge, UNI_length
 
 # import external public modules
 import numpy as np
@@ -92,7 +92,7 @@ MATCH_TYPE_DEFAULT = MATCH_PHYSICS  # can change this one. Tells whether to matc
 AXES = ('x', 'y', 'z')
 
 
-class EbysusData(BifrostData, fluid_tools.Multifluid):
+class EbysusData(fluid_tools.Multifluid, BifrostData):
 
     """
     Class to hold data from Multifluid/multispecies simulations
@@ -929,21 +929,7 @@ class EbysusData(BifrostData, fluid_tools.Multifluid):
         # handle documentation for simple_vars
         # set documentation for vardict, if var == ''.
         if var == '':
-            _simple_vars_msg = ('Quantities which are stored by the simulation. These are '
-                                'loaded as numpy memmaps by reading data files directly.')
-            docvar = document_vars.vars_documenter(self, 'SIMPLE_VARS', None, _simple_vars_msg)
-            # TODO (maybe): ^^^ use self.simple_vars, instead of None, for QUANT_VARS (args[2])
-            #    However, that might not be viable, depending on when self.simple_vars is assigned
-            for x in AXES:
-                docvar('b'+x, x+'-component of magnetic field [simu. units]',
-                       nfluid=0, uni=U_TUPLE(UNI.b, UsymD(usi='T', ucgs='G')))
-            docvar('r', 'mass density of ifluid [simu. units]', nfluid=1, uni=UNI_rho)
-            for x in AXES:
-                docvar('p'+x, x+'-component of momentum density of ifluid [simu. units]',
-                       nfluid=1, uni=UNI_speed * UNI_rho)
-            units_e = dict(uni_f=UNI.e, usi_name=Usym('J') / Usym('m')**3)  # ucgs_name= ???
-            docvar('e', 'energy density of ifluid [simu. units]. Use -1 for electrons.',
-                        nfluid=1, **units_e)
+            _ebysus_simple_var_docs(self)
             return None
 
         if var not in self.simple_vars:
@@ -1947,10 +1933,10 @@ def printi(fdir='./', rootname='', it=1):
     va = dd.get_var('va', it) * dd.params['u_u'] / 1e5
     print('va=%6.2E,%6.2E km/s' % (np.min(va), np.max(va)))
 
+
 ###################
 #  READING FILES  #
 ###################
-
 
 @file_memory.manage_memmaps(file_memory.MEMORY_MEMMAP)
 @file_memory.remember_and_recall(file_memory.MEMORY_MEMMAP, ORDERED=True)
@@ -2040,10 +2026,10 @@ def read_mftab_ascii(filename):
 
 read_mf_param_file = read_mftab_ascii   # alias
 
+
 ####################
 #  LOCATING SNAPS  #
 ####################
-
 
 class SnapfileNotFoundError(FileNotFoundError):
     '''custom error class for reporting snap not found; subclass of FileNotFoundError.'''
@@ -2776,10 +2762,10 @@ def write_mftab_ascii(filename, NSPECIES_MAX=28,
             f.write("\n")
     f.close()
 
+
 ######################
 #  DESTROYING FILES  #
 ######################
-
 
 def smash_folder(folder, mode='trash', warn=True, _force_no_warn=False):
     '''smashes (destroys or moves to trash) folder.
@@ -2909,3 +2895,44 @@ def _count_components(path):
     '''counts components in the provided path.
     E.g. /Users/You/ has 2 components. /Users/You/Folder/Subfolder has 4 components.'''
     return len(os.path.normpath(path).split(path))
+
+
+
+###################################
+#  DOCUMENTATION FOR SIMPLE VARS  #
+###################################
+
+def _ebysus_simple_var_docs(self):
+    '''sets documentation for EbysusData self, for simple vars.
+    Simple vars include fundamental vars and aux vars.
+    Fundamental vars are bx, by, bz, r, px, py, pz, e.
+
+    All simple vars are in simu units.
+    '''
+    _simple_vars_msg = ('Quantities which are stored by the simulation. These are '
+                                'loaded as numpy memmaps by reading data files directly.')
+    docvar = document_vars.vars_documenter(self, 'SIMPLE_VARS', None, _simple_vars_msg)
+    # TODO (maybe): ^^^ use self.simple_vars, instead of None, for QUANT_VARS (args[2])
+    #    However, that might not be viable, depending on when self.simple_vars is assigned
+    # # # FUNDAMENTAL VARS # # #
+    for x in AXES:
+        docvar('b'+x, x+'-component of magnetic field [simu. units]',
+               nfluid=0, uni=U_TUPLE(UNI.b, UsymD(usi='T', ucgs='G')))
+    docvar('r', 'mass density of ifluid [simu. units]', nfluid=1, uni=UNI_rho)
+    for x in AXES:
+        docvar('p'+x, x+'-component of momentum density of ifluid [simu. units]',
+               nfluid=1, uni=UNI_speed * UNI_rho)
+    units_e = dict(uni_f=UNI.e, usi_name=Usym('J') / Usym('m')**3)  # ucgs_name= ???
+    docvar('e', 'energy density of ifluid [simu. units]. Use -1 for electrons.',
+                nfluid=1, **units_e)
+    # # # AUX VARS # # #
+    # only include documentation for the aux vars which appear in self.simple_vars.
+    # first, set up the documentation rules. Then, loop and only add the ones for aux vars in simple_vars.
+    rules = {
+        **{f'i{x}': (f'{x}-component of current density',
+                     dict(nfluid=0, uni=UNI_charge / UNI_length**2)) for x in AXES},
+    }
+    for var, rule in rules.items():
+        if var in self.simple_vars:
+            docvar(var, rule[0], **rule[1])
+
