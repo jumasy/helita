@@ -2655,16 +2655,17 @@ class Opatab:
             h = ch.Ioneq.ioneq(1)
             h.load(tabname)
             temp = np.linspace(tgmin, tgmax, ntg)
-            h.calculate(10**temp)
+            #print(h.Temperature)
+            #h.calculate(10**temp)
             logte = np.log10(h.Temperature)
             self.dte = logte[1]-logte[0]
             self.teinit = logte[0]
             self.nte = np.size(logte)
-            self.ionh1d = h.Ioneq[0, :]
+            self.ionh1d = np.interp(10**temp, h.Temperature, h.Ioneq[0, :])
             he = ch.Ioneq.ioneq(2)
             he.load(tabname)
-            self.ionhe1d = he.Ioneq[0, :]
-            self.ionhei1d = he.Ioneq[1, :]
+            self.ionhe1d = np.interp(10**temp, he.Temperature, he.Ioneq[0, :])
+            self.ionhei1d = np.interp(10**temp, he.Temperature, he.Ioneq[1, :]) 
         if self.verbose:
             print('*** Read OPA table from ' + tabname, whsp*4, end="\r",
                   flush=True)
