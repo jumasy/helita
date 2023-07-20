@@ -2733,7 +2733,7 @@ class Opatab:
         self.load_opa1d_table()
         #rhoeetab = Rhoeetab(fdir=self.fdir)
         #tgTable = rhoeetab.get_table('tg')
-        tgTable = np.linspace(self.teinit, self.teinit + self.dte*self.nte, self.nte)
+        tgTable = np.linspace(self.teinit, self.teinit + self.dte*(self.nte-1), self.nte)
         # translate to table coordinates
         x = ((tgTable) - self.teinit) / self.dte
         # interpolate quantity
@@ -2749,17 +2749,11 @@ class Opatab:
         rhe = 0.1
         if lambd is not None:
             self.lambd = lambd
-        self.tg_tab_interp()
-        arr = (self.ionh) * self.hopac() + rhe * ((1 - self.ionhei - (1-self.ionhei-self.ionhe)) *
-                                                  self.heiopac() + (self.ionhei) * self.heiiopac())
-        #ion_h = self.ionh
-        #ion_he = self.ionhe
-        #ion_hei = self.ionhei
-        #ohi = self.hopac()
-        #ohei = self.heiopac()
-        #oheii = self.heiiopac()
-        # arr = (1 - ion_h) * ohi + rhe * ((1 - ion_he - ion_hei) *
-        #                                 ohei + ion_he * oheii)
+        self.load_opa1d_table()
+        #arr = (self.ionh) * self.hopac() + rhe * ((1 - self.ionhei - (1-self.ionhei-self.ionhe)) *
+        #                                          self.heiopac() + (self.ionhei) * self.heiiopac())
+        arr = (self.ionh1d) * self.hopac() + rhe * ((1 - self.ionhei1d - (1-self.ionhei1d-self.ionhe1d)) *
+                                                  self.heiopac() + (self.ionhei1d) * self.heiiopac())
         arr[arr < 0] = 0
         return arr
 
@@ -2784,12 +2778,10 @@ class Opatab:
             h = ch.Ioneq.ioneq(1)
             h.load(tabname)
             temp = np.linspace(tgmin, tgmax, ntg)
-            #print(h.Temperature)
-            #h.calculate(10**temp)
-            logte = np.log10(h.Temperature)
-            self.dte = logte[1]-logte[0]
-            self.teinit = logte[0]
-            self.nte = np.size(logte)
+            self.dte = temp[1]-temp[0]
+            self.temp = temp
+            self.teinit = temp[0]
+            self.nte = np.size(temp)
             self.ionh1d = np.interp(10**temp, h.Temperature, h.Ioneq[0, :])
             he = ch.Ioneq.ioneq(2)
             he.load(tabname)
