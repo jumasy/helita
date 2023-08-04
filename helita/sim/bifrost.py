@@ -1032,10 +1032,13 @@ class BifrostData(Plottable3D):
                 cte = self.uni.u_l  # not sure if this works, u_l seems to be 1.e8
             self.x = self.x*cte
             self.dx = self.dx*cte
+            self.dx1d = self.dx1d/cte
             self.y = self.y*cte
             self.dy = self.dy*cte
+            self.dy1d = self.dy/cte
             self.z = - self.z[::-1].copy()*cte
-            self.dz = - self.dz1d[::-1].copy()*cte
+            self.dz = self.dz1d[::-1].copy()*cte
+            self.dz1d = self.dz1d[::-1].copy()/cte
 
     def trans2noncommaxes(self):
 
@@ -1047,10 +1050,13 @@ class BifrostData(Plottable3D):
                 cte = self.uni.u_l
             self.x = self.x/cte
             self.dx = self.dx/cte
+            self.dx1d = self.dx1d/cte
             self.y = self.y/cte
             self.dy = self.dy/cte
+            self.dy1d = self.dy/cte
             self.z = - self.z[::-1].copy()/cte
-            self.dz = - self.dz1d[::-1].copy()/cte
+            self.dz = self.dz1d[::-1].copy()/cte
+            self.dz1d = self.dz1d[::-1].copy()/cte
 
     @document_vars.quant_tracking_simple('SIMPLE_VARS')
     def _get_simple_var(self, var, order='F', mode='r',
