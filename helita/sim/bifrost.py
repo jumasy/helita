@@ -1035,7 +1035,7 @@ class BifrostData(Plottable3D):
             self.dx1d = self.dx1d/cte
             self.y = self.y*cte
             self.dy = self.dy*cte
-            self.dy1d = self.dy/cte
+            self.dy1d = self.dy1d/cte
             self.z = - self.z[::-1].copy()*cte
             self.dz = self.dz1d[::-1].copy()*cte
             self.dz1d = self.dz1d[::-1].copy()/cte
@@ -1053,7 +1053,7 @@ class BifrostData(Plottable3D):
             self.dx1d = self.dx1d/cte
             self.y = self.y/cte
             self.dy = self.dy/cte
-            self.dy1d = self.dy/cte
+            self.dy1d = self.dy1d/cte
             self.z = - self.z[::-1].copy()/cte
             self.dz = self.dz1d[::-1].copy()/cte
             self.dz1d = self.dz1d[::-1].copy()/cte
