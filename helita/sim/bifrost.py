@@ -1032,10 +1032,13 @@ class BifrostData(Plottable3D):
                 cte = self.uni.u_l  # not sure if this works, u_l seems to be 1.e8
             self.x = self.x*cte
             self.dx = self.dx*cte
+            self.dx1d = self.dx1d/cte
             self.y = self.y*cte
             self.dy = self.dy*cte
+            self.dy1d = self.dy1d/cte
             self.z = - self.z[::-1].copy()*cte
-            self.dz = - self.dz1d[::-1].copy()*cte
+            self.dz = self.dz1d[::-1].copy()*cte
+            self.dz1d = self.dz1d[::-1].copy()/cte
 
     def trans2noncommaxes(self):
 
@@ -1047,10 +1050,13 @@ class BifrostData(Plottable3D):
                 cte = self.uni.u_l
             self.x = self.x/cte
             self.dx = self.dx/cte
+            self.dx1d = self.dx1d/cte
             self.y = self.y/cte
             self.dy = self.dy/cte
+            self.dy1d = self.dy1d/cte
             self.z = - self.z[::-1].copy()/cte
-            self.dz = - self.dz1d[::-1].copy()/cte
+            self.dz = self.dz1d[::-1].copy()/cte
+            self.dz1d = self.dz1d[::-1].copy()/cte
 
     @document_vars.quant_tracking_simple('SIMPLE_VARS')
     def _get_simple_var(self, var, order='F', mode='r',
@@ -2733,7 +2739,7 @@ class Opatab:
         self.load_opa1d_table()
         #rhoeetab = Rhoeetab(fdir=self.fdir)
         #tgTable = rhoeetab.get_table('tg')
-        tgTable = np.linspace(self.teinit, self.teinit + self.dte*self.nte, self.nte)
+        tgTable = np.linspace(self.teinit, self.teinit + self.dte*(self.nte-1), self.nte)
         # translate to table coordinates
         x = ((tgTable) - self.teinit) / self.dte
         # interpolate quantity
@@ -2749,17 +2755,11 @@ class Opatab:
         rhe = 0.1
         if lambd is not None:
             self.lambd = lambd
-        self.tg_tab_interp()
-        arr = (self.ionh) * self.hopac() + rhe * ((1 - self.ionhei - (1-self.ionhei-self.ionhe)) *
-                                                  self.heiopac() + (self.ionhei) * self.heiiopac())
-        #ion_h = self.ionh
-        #ion_he = self.ionhe
-        #ion_hei = self.ionhei
-        #ohi = self.hopac()
-        #ohei = self.heiopac()
-        #oheii = self.heiiopac()
-        # arr = (1 - ion_h) * ohi + rhe * ((1 - ion_he - ion_hei) *
-        #                                 ohei + ion_he * oheii)
+        self.load_opa1d_table()
+        #arr = (self.ionh) * self.hopac() + rhe * ((1 - self.ionhei - (1-self.ionhei-self.ionhe)) *
+        #                                          self.heiopac() + (self.ionhei) * self.heiiopac())
+        arr = (self.ionh1d) * self.hopac() + rhe * ((1 - self.ionhei1d - (1-self.ionhei1d-self.ionhe1d)) *
+                                                  self.heiopac() + (self.ionhei1d) * self.heiiopac())
         arr[arr < 0] = 0
         return arr
 
@@ -2784,16 +2784,15 @@ class Opatab:
             h = ch.Ioneq.ioneq(1)
             h.load(tabname)
             temp = np.linspace(tgmin, tgmax, ntg)
-            h.calculate(10**temp)
-            logte = np.log10(h.Temperature)
-            self.dte = logte[1]-logte[0]
-            self.teinit = logte[0]
-            self.nte = np.size(logte)
-            self.ionh1d = h.Ioneq[0, :]
+            self.dte = temp[1]-temp[0]
+            self.temp = temp
+            self.teinit = temp[0]
+            self.nte = np.size(temp)
+            self.ionh1d = np.interp(10**temp, h.Temperature, h.Ioneq[0, :])
             he = ch.Ioneq.ioneq(2)
             he.load(tabname)
-            self.ionhe1d = he.Ioneq[0, :]
-            self.ionhei1d = he.Ioneq[1, :]
+            self.ionhe1d = np.interp(10**temp, he.Temperature, he.Ioneq[0, :])
+            self.ionhei1d = np.interp(10**temp, he.Temperature, he.Ioneq[1, :]) 
         if self.verbose:
             print('*** Read OPA table from ' + tabname, whsp*4, end="\r",
                   flush=True)
