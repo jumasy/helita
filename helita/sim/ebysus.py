@@ -67,20 +67,20 @@ import numpy as np
 
 try:
     import zarr
-except ImportError:
-    zarr = tools.ImportFailed('zarr')
+except ImportError as err:
+    zarr = tools.ImportFailed('zarr', err=err)
 
 # import external private modules
 try:
     from atom_py.at_tools import atom_tools as at
     at_tools_exists = True
-except:
+except ImportError as err:
     at_tools_exists = False
-    at = tools.ImportFailed('atom_py.at_tools.atom_tools')
+    at = tools.ImportFailed('atom_py.at_tools.atom_tools', err=err)
 try:
     from atom_py.at_tools import fluids as fl
-except ImportError:
-    fl = tools.ImportFailed('at_tools.fluids')
+except ImportError as err:
+    fl = tools.ImportFailed('at_tools.fluids', err=err)
 
 # set defaults:
 from .load_mf_quantities import MATCH_AUX, MATCH_PHYSICS

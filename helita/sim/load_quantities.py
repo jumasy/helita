@@ -13,8 +13,9 @@ from .load_arithmetic_quantities import do_stagger
 
 try:
     from numba import jit, njit, prange
-except ImportError:
-    numba = prange = tools.ImportFailed('numba', "This module is required to use stagger_kind='numba'.")
+except ImportError as err:
+    numba = prange = tools.ImportFailed('numba',
+            "This is used by some helper functions in load_quantities.", err=err)
     jit = njit = tools.boring_decorator
 
 # import the potentially-relevant things from the internal module "units"

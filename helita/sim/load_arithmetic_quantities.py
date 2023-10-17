@@ -35,8 +35,10 @@ from . import document_vars, tools
 
 try:
     from . import stagger
-except ImportError:
-    stagger = tools.ImportFailed('stagger')
+except ImportError as err:
+    stagger = tools.ImportFailed('stagger', err=err)
+    # even though this is an "internal" module, if it fails to import for some reason,
+    # user may still use load_arithemtic_quantities sometimes (when do_stagger=False).
 
 # import external public modules
 import numpy as np

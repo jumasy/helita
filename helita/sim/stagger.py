@@ -63,8 +63,8 @@ from . import tools
 
 try:
     from numba import jit, njit, prange
-except ImportError:
-    numba = prange = tools.ImportFailed('numba', "This module is required to use stagger_kind='numba'.")
+except ImportError as err:
+    numba = prange = tools.ImportFailed('numba', "This module is required to use stagger_kind='numba'.", err=err)
     jit = njit = tools.boring_decorator
 
 

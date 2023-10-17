@@ -15,8 +15,8 @@ from .tools import (
 
 try:
     import matplotlib.pyplot as plt
-except ImportError:
-    plt = ImportFailed('matplotlib.pyplot')
+except ImportError as err:
+    plt = ImportFailed('matplotlib.pyplot', err=err)
 
 
 class Plottable3D():
@@ -143,7 +143,7 @@ class Plottable3D():
         elif ucgs_key is not None:
             varunits = 'cgs'
         else:
-            varunits = getattr(self, 'units_output', None)
+            varunits = getattr(self, 'units_output', '???')
         if var is None:
             var = 'var=???'
         title = var if varunits is None else f'{var} [{varunits}]'
