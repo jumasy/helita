@@ -149,7 +149,7 @@ def set_crossdict_as_needed(obj, **kwargs):
     '''sets all things related to cross_dict.
     Use None to restore default values.
 
-    e.g. get_var(..., maxwell=None) retores to using default value for maxwell (False).
+    e.g. get_var(..., maxwell=None) restores to using default value for maxwell (False).
     Defaults:
       maxwell: False
       cross_tab: None
@@ -159,6 +159,11 @@ def set_crossdict_as_needed(obj, **kwargs):
         cross_dict['h2','he1'] = cross_dict['he1','h2'] = 'p-he.txt'
         cross_dict['e','he1'] = cross_dict['he1','e'] = 'e-he.txt'
         cross_dict['e','h1']  = cross_dict['h1','e']  = 'e-h.txt'
+
+    when maxwell is True,
+        use maxwell collisions whenever cross dict is not available for species pair.
+    when maxwell is False,
+        use a (very bad???) guess for cross section instead.
     '''
     if not hasattr(obj, 'CROSS_SECTION_INFO'):
         obj.CROSS_SECTION_INFO = dict()
@@ -398,10 +403,10 @@ def get_crossections(obj, quant, CROSTAB_QUANT=None, **kwargs):
     # -- return result -- #
     try:
         return cross
-    except Exception:
-        print('(WWW) cross-section: wrong combination of species', end="\r",
-              flush=True)
-        return None
+    except NameError:  # cross not yet defined.
+        errmsg = (f'no applicable cross section for {quant!r}, using settings from self.CROSS_SECTION_INFO.'
+                  ' Maybe you meant to use maxwell=False?')
+        raise ValueError(errmsg) from None
 
 
 # default
@@ -490,12 +495,13 @@ def get_collision(obj, quant, COLFRE_QUANT=None, **kwargs):
     ion2 = ''.join([i for i in elem[1] if i.isdigit()])
     spic1 = spic1[2:]
 
-    crossarr = get_crossections(obj, '%s%s_%s%s' % (spic1, ion1, spic2, ion2), **kwargs)
-
-    if np.any(crossarr) == None:
+    try:
+        crossarr = get_crossections(obj, '%s%s_%s%s' % (spic1, ion1, spic2, ion2), **kwargs)
+    except ValueError:
+        # no applicable cross section, so use maxwell.
         return get_collision_maxw(obj, 'numx'+quant[2:], **kwargs)
     else:
-
+        # found an applicable cross section.
         nspic2 = obj.get_var('n%s-%s' % (spic2, ion2))
         if np.size(elem) > 2:
             nspic2 *= (1.0-obj.get_var('kappanorm_%s' % spic2))
