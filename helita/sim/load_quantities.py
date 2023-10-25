@@ -677,7 +677,22 @@ def get_collision_ms(obj, quant, COLFRI_QUANT=None, **kwargs):
     if (quant[0:2] != 'nu') or (not ''.join([i for i in quant if not i.isdigit()]) in COLFRI_QUANT):
         return None
 
-    elif quant in ('nu_ni_mag', 'nu_ni', 'numx_ni_mag', 'numx_ni'):
+    # OPTIONAL: RETURN CACHED VALUE FOR NU. (if cache_nu is False or not defined, does nothing.)
+    #  the desire for caching nu comes from, e.g., nu_ni needs to get colfreqs for each neutral / ion pair...
+    if getattr(obj, 'cache_nu', False):
+        try:
+            cache = obj._cache_nu
+        except AttributeError:
+            pass
+        else:
+            cache = obj._cache_nu
+            if quant in cache:
+                if cache.compatible(obj):  # e.g., same snap, same cross section info, same units output.
+                    if getattr(obj, 'cache_nu_verbose', False):
+                        print(f'using cached value for {quant!r}')
+                    return cache[quant]
+
+    if quant in ('nu_ni_mag', 'nu_ni', 'numx_ni_mag', 'numx_ni'):
         result = obj.zero()
         s_nu, _, ni_mag = quant.partition('_')  # s_numx = nu or numx
         for ielem in obj.ELEMLIST:
@@ -753,6 +768,34 @@ def get_collision_ms(obj, quant, COLFRI_QUANT=None, **kwargs):
             if ielem != elem:
                 getting = '{nu}{elem}_{ielem}{mag}'.format(nu=nu, elem=elem, ielem=ielem, mag=mag)
                 result += obj.get_var(getting, **kwargs)
+
+    # OPTIONAL: CACHING NU -- requires user to set obj.cache_nu = True.
+    if getattr(obj, 'cache_nu', False):
+        cacheables = getattr(obj, 'CACHING_NU_QUANTS',  # default, only cache nu if it is a sum of nu values.
+                             ['nu_ni_mag', 'nu_ni', 'numx_ni_mag', 'numx_ni',
+                             'nu_in_mag', 'nu_in',
+                             'nu_ei', 'nu_en'])
+        if quant in cacheables:
+            try:
+                cache = obj._cache_nu
+            except AttributeError:
+                need_new_cache = True
+            else:
+                need_new_cache = (not cache.compatible(obj))
+            if need_new_cache:  # [TODO] maybe the cache tool should be defined elsewhere...
+                class NuCache(dict):  # required because can't set attributes of dict()
+                    pass   # but can set attributes of subclass of dict().
+                cache = NuCache()
+                def cache_compatible(obj_):
+                    return (cache.snap == obj_.snap) \
+                        and (cache.CROSS_SECTION_INFO == obj_.CROSS_SECTION_INFO) \
+                        and (cache.units_output == obj_.units_output)
+                cache.compatible = cache_compatible
+                cache.snap = obj.snap
+                cache.CROSS_SECTION_INFO = obj.CROSS_SECTION_INFO.copy()
+                cache.units_output = obj.units_output
+                obj._cache_nu = cache
+            cache[quant] = result
 
     return result
 
@@ -1475,6 +1518,7 @@ def get_ambparam(obj, quant, AMB_QUANT=None, **kwargs):
         result = (obj.get_var('rneu') / obj.get_var('rho') * u_b)**2
         result /= (4.0 * obj.uni.pi * obj.get_var('nu_ni', **kwargs) + 1e-20)
         result *= obj.get_var('b2')  # / 1e7
+        # cache result
 
     # This should be the same and eta_amb2 except that eta_amb2 has many more species involved.
     elif quant == 'eta_amb2':
