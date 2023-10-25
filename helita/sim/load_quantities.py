@@ -193,6 +193,7 @@ def load_quantities(obj, quant, *args__None, PLASMA_QUANT=None, CYCL_RES=None,
                     KAPPA_QUANT=None, GYROF_QUANT=None, WAVE_QUANT=None,
                     FLUX_QUANT=None, CURRENT_QUANT=None, COLCOU_QUANT=None,
                     COLCOUMS_QUANT=None, COLFREMX_QUANT=None, EM_QUANT=None,
+                    EFIELD_QUANT=None,
                     POND_QUANT=None, **kwargs):
     '''loads or calculates the value of single-fluid quantity quant.
 
@@ -253,6 +254,7 @@ def load_quantities(obj, quant, *args__None, PLASMA_QUANT=None, CYCL_RES=None,
         (get_crossections, 'CROSTAB_QUANT'),
         (get_collision_ms, 'COLFRI_QUANT'),
         (get_current, 'CURRENT_QUANT'),
+        (get_efield, 'EFIELD_QUANT'),
         (get_flux, 'FLUX_QUANT'),
         (get_plasmaparam, 'PLASMA_QUANT'),
         (get_wavemode, 'WAVE_QUANT'),
@@ -284,10 +286,7 @@ def load_quantities(obj, quant, *args__None, PLASMA_QUANT=None, CYCL_RES=None,
     return val
 
 
-# default
 _EM_QUANT = ('EM_QUANT', ['emiss'])
-# get value
-
 
 @document_vars.quant_tracking_simple(_EM_QUANT[0])
 def get_em(obj, quant, EM_QUANT=None,  *args, **kwargs):
@@ -332,10 +331,7 @@ def get_em(obj, quant, EM_QUANT=None,  *args, **kwargs):
     return en * (nh / unitsnorm)
 
 
-# default
 _CROSTAB_QUANT0 = ('CROSTAB_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_CROSTAB_QUANT0)
 def get_crossections(obj, quant, CROSTAB_QUANT=None, **kwargs):
@@ -409,10 +405,7 @@ def get_crossections(obj, quant, CROSTAB_QUANT=None, **kwargs):
         raise ValueError(errmsg) from None
 
 
-# default
 _EOSTAB_QUANT = ('EOSTAB_QUANT', ['ne', 'tg', 'pg', 'kr', 'eps', 'opa', 'temt', 'ent'])
-# get value
-
 
 @document_vars.quant_tracking_simple(_EOSTAB_QUANT[0])
 def get_eosparam(obj, quant, EOSTAB_QUANT=None, **kwargs):
@@ -466,10 +459,7 @@ def get_eosparam(obj, quant, EOSTAB_QUANT=None, **kwargs):
             rho, ee, order=1, out=quant) * fac
 
 
-# default
 _COLFRE_QUANT0 = ('COLFRE_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLFRE_QUANT0)
 def get_collision(obj, quant, COLFRE_QUANT=None, **kwargs):
@@ -521,10 +511,7 @@ def get_collision(obj, quant, COLFRE_QUANT=None, **kwargs):
             scr1 * nspic2  # * (awg1 / (awg1 + awg1))
 
 
-# default
 _COLFREMX_QUANT0 = ('COLFREMX_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLFREMX_QUANT0)
 def get_collision_maxw(obj, quant, COLFREMX_QUANT=None, **kwargs):
@@ -583,10 +570,7 @@ def get_collision_maxw(obj, quant, COLFREMX_QUANT=None, **kwargs):
         return CONST_MULT * nspic2 * np.sqrt(CONST_ALPHA_N * e_charge**2 * awg2 / (eps0 * awg1 * (awg1 + awg2)))
 
 
-# default
 _COLCOU_QUANT0 = ('COLCOU_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLCOU_QUANT0)
 def get_collcoul(obj, quant, COLCOU_QUANT=None, **kwargs):
@@ -624,10 +608,7 @@ def get_collcoul(obj, quant, COLCOU_QUANT=None, **kwargs):
         nspic2 / tg**1.5 * (int(ion2)-1)**2
 
 
-# default
 _COLCOUMS_QUANT0 = ('COLCOUMS_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLCOUMS_QUANT0)
 def get_collcoul_ms(obj, quant, COLCOUMS_QUANT=None, **kwargs):
@@ -669,10 +650,7 @@ def get_collcoul_ms(obj, quant, COLCOUMS_QUANT=None, **kwargs):
     return result
 
 
-# default
 _COLFRI_QUANT0 = ('COLFRI_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLFRI_QUANT0)
 def get_collision_ms(obj, quant, COLFRI_QUANT=None, **kwargs):
@@ -779,10 +757,7 @@ def get_collision_ms(obj, quant, COLFRI_QUANT=None, **kwargs):
     return result
 
 
-# default
 _COULOMB_COL_QUANT0 = ('COULOMB_COL_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COULOMB_COL_QUANT0)
 def get_coulomb(obj, quant, COULOMB_COL_QUANT=None, **kwargs):
@@ -815,10 +790,8 @@ def get_coulomb(obj, quant, COULOMB_COL_QUANT=None, **kwargs):
             (np.sqrt(tg.astype('Float64')**3) + 1.0e-20))
 
 
-# default
-_CURRENT_QUANT = ('CURRENT_QUANT', ['ix', 'iy', 'iz', 'wx', 'wy', 'wz'])
-# get value
-
+_CURRENT_QUANT = ('CURRENT_QUANT', ['ix', 'iy', 'iz', 'wx', 'wy', 'wz',
+                                    'jx', 'jy', 'jz'])
 
 @document_vars.quant_tracking_simple(_CURRENT_QUANT[0])
 def get_current(obj, quant, CURRENT_QUANT=None, **kwargs):
@@ -837,19 +810,23 @@ def get_current(obj, quant, CURRENT_QUANT=None, **kwargs):
         docvar('wx',  'component x of the rotational of the velocity')
         docvar('wy',  'component y of the rotational of the velocity')
         docvar('wz',  'component z of the rotational of the velocity')
+        for x in 'xyz':
+            docvar(f'j{x}', f'{x}-component of the current; always from curl(B)/mu0. i{x} may be from aux.')
 
     if (quant == '') or not quant in CURRENT_QUANT:
         return None
 
     # Calculate derivative of quantity
     axis = quant[-1]
+    if quant[0] == 'j':
+        return obj(f'curvecb{axis}') / obj.uni('mu0')   # curl(B) = mu0 J
     if quant[0] == 'i':
         q = 'b'
     else:
         q = 'u'
     try:
         getattr(obj, quant)
-    except AttributeError:
+    except AttributeError:  # not in aux.
         if axis == 'x':
             varsn = ['z', 'y']
             derv = ['dydn', 'dzdn']
@@ -868,14 +845,87 @@ def get_current(obj, quant, CURRENT_QUANT=None, **kwargs):
                 obj.get_var('d' + q + varsn[1] + derv[1]))
 
 
-# default
+_EFIELD_QUANT = ('EFIELD_QUANT', ['efx', 'efy', 'efz',
+                                  'uxb_x', 'uxb_y', 'uxb_z',
+                                  'jxb_x', 'jxb_y', 'jxb_z',
+                                  'ef_uxb_x', 'ef_uxb_y', 'ef_uxb_z',
+                                  'ef_jxb_x', 'ef_jxb_y', 'ef_jxb_z',
+                                  'ef_vecxyzce', 'ef_jxb__vecxyzce',
+                                  # ef_uxb__vecxyzce also available, but no need to implement here,
+                                  #   since u & B are quite fast to load.
+                                  #   for details, see load_arithmetic_quantities.get_multi_quant.
+                                  ])
+
+@document_vars.quant_tracking_simple(_EFIELD_QUANT[0])
+def get_efield(obj, quant, EFIELD_QUANT=None, **kwargs):
+    '''
+    Computes electric field, or terms in electric field.
+    '''
+    # note - some terms here might have already been implemented in get_hallparam,
+    #  but I wanted to implement these all here to be sure I got them right. - SE (2023/10/25)
+    if EFIELD_QUANT is None:
+        EFIELD_QUANT = _EFIELD_QUANT[1]
+
+    if quant == '':
+        docvar = document_vars.vars_documenter(obj, _EFIELD_QUANT[0], EFIELD_QUANT, get_efield.__doc__)
+        AXES = ('x', 'y', 'z')
+        for x in AXES:
+            docvar(f'ef{x}', f'{x}-component of the electric field, calculated using B & eta_amb. edge-centered.' + 
+                            f'E{x} = (-u cross B)_{x} + eta_amb * (J cross B)_{x}.')
+            docvar(f'uxb_{x}', f'{x}-component of u cross B. edge-centered.')
+            docvar(f'jxb_{x}', f'{x}-component of J cross B. Here, J is from curl(B), never from aux. edge-centered.')
+            docvar(f'ef_uxb_{x}', f'{x}-component of E{x} = (-u cross B)_{x}. edge-centered.')
+            docvar(f'ef_jxb_{x}', f'{x}-component of E{x} = eta_amb * (J cross B)_{x}. edge-centered.')
+        docvar('ef_vecxyzce', f'ef, as a vector, shape=(nx,ny,nz,3). centered at cell centers. ' + 
+                                '[EFF] only calculates eta_amb once.')
+        docvar('ef_jxb__vecxyzce', f'ef_jxb_, as a vector, shape=(nx,ny,nz,3). centered at cell centers. ' + 
+                                    '[EFF] only calculates eta_amb once.')
+
+    if (quant == '') or (quant not in EFIELD_QUANT):
+        return None
+
+    q, x = quant[:-1], quant[-1]
+    if x == 'e':  # --> vecxyzce
+        q0 = quant[:-len('_vecxyzce')]
+        if q0 == 'ef':
+            ef_uxb = obj('ef_uxb__vecxyzce')
+            ef_jxb = obj('ef_jxb__vecxyzce')
+            return ef_uxb + ef_jxb
+        elif q0 == 'ef_jxb_':
+            eta = obj('eta_amb')
+            eta_ = np.asanyarray(eta)[..., np.newaxis]  # compatible shape with shape(jxb__vecxyzce)==(..., 3)
+            return eta_ * obj('jxb__vecxyzce')
+        # note: 'ef_uxb__vecxyzce' handled by load_arithmetic_quantities.get_multi_quant;
+        #   no need to handle it here, since u & B are quite fast to load.
+        else:
+            raise NotImplementedError(f'{quant!r} in get_efield.')
+    if q == 'ef':
+        ef_uxb = obj(f'ef_uxb_{x}')
+        ef_jxb = obj(f'ef_jxb_{x}')
+        return ef_uxb + ef_jxb
+    elif q in ('uxb_', 'ef_uxb_'):
+        result = obj(f'u_facecross_b{x}')  # u face; B face; E edge
+        if q == 'uxb_':
+            return result
+        else:  # q == 'ef_uxb_':
+            return -result
+    elif q in ('jxb_', 'ef_jxb_'):
+        result = obj(f'j_edgefacecrosstoedge_b{x}')  # J edge; B face; E edge
+        if q == 'jxb_':
+            return result
+        else:  # q == 'ef_jxb_':
+            eta = obj('eta_amb')
+            return eta * result
+
+    else:
+        raise NotImplementedError(f'{quant!r} in get_efield.')
+
+
 _FLUX_QUANT = ('FLUX_QUANT',
                ['pfx',  'pfy',  'pfz',
                 'pfex', 'pfey', 'pfez',
                 'pfwx', 'pfwy', 'pfwz']
                )
-# get value
-
 
 @document_vars.quant_tracking_simple(_FLUX_QUANT[0])
 def get_flux(obj, quant, FLUX_QUANT=None, **kwargs):
@@ -922,12 +972,9 @@ def get_flux(obj, quant, FLUX_QUANT=None, **kwargs):
     return var
 
 
-# default
 _POND_QUANT = ('POND_QUANT',
                ['pond']
                )
-# get value
-
 
 @document_vars.quant_tracking_simple(_POND_QUANT[0])
 def get_ponderomotive(obj, quant, POND_QUANT=None, **kwargs):
@@ -977,14 +1024,11 @@ def get_ponderomotive(obj, quant, POND_QUANT=None, **kwargs):
         do_stagger(dpond, 'ddzdn', obj=obj)*ibzc
 
 
-# default
 _PLASMA_QUANT = ('PLASMA_QUANT',
                  ['beta', 'beta_ion', 'va', 'cs', 's', 'ke', 'mn', 'man', 'hp', 'nr',
                   'vax', 'vay', 'vaz', 'hx', 'hy', 'hz', 'kx', 'ky', 'kz',
                   ]
                  )
-# get value
-
 
 @document_vars.quant_tracking_simple(_PLASMA_QUANT[0])
 def get_plasmaparam(obj, quant, PLASMA_QUANT=None, **kwargs):
@@ -1075,10 +1119,7 @@ def get_plasmaparam(obj, quant, PLASMA_QUANT=None, **kwargs):
         return nr_H * obj.uni.mu      # mu is correction factor since plasma isn't just H.
 
 
-# default
 _WAVE_QUANT = ('WAVE_QUANT', ['alf', 'fast', 'long'])
-# get value
-
 
 @document_vars.quant_tracking_simple(_WAVE_QUANT[0])
 def get_wavemode(obj, quant, WAVE_QUANT=None, **kwargs):
@@ -1135,10 +1176,7 @@ def get_wavemode(obj, quant, WAVE_QUANT=None, **kwargs):
     return result
 
 
-# default
 _CYCL_RES = ('CYCL_RES', ['n6nhe2', 'n6nhe3', 'nhe2nhe3'])
-# get value
-
 
 @document_vars.quant_tracking_simple(_CYCL_RES[0])
 def get_cyclo_res(obj, quant, CYCL_RES=None, **kwargs):
@@ -1175,10 +1213,7 @@ def get_cyclo_res(obj, quant, CYCL_RES=None, **kwargs):
                           'avaiable if do_hion and do_helium is true'))
 
 
-# default
 _GYROF_QUANT0 = ('GYROF_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_GYROF_QUANT0)
 def get_gyrof(obj, quant, GYROF_QUANT=None, **kwargs):
@@ -1208,14 +1243,11 @@ def get_gyrof(obj, quant, GYROF_QUANT=None, **kwargs):
             (obj.uni.weightdic[quant[2:-1]] * obj.uni.amusi)
 
 
-# default
 #_KAPPA_QUANT = ['kappa' + elem for elem in ELEMLIST]
 #_KAPPA_QUANT = ['kappanorm_', 'kappae'] + _KAPPA_QUANT
 # I suspect that ^^^ should be kappanorm_ + elem for elem in ELEMLIST,
 # but I don't know what kappanorm is supposed to mean, so I'm not going to change it now. -SE June 28 2021
 _KAPPA_QUANT0 = ('KAPPA_QUANT')
-# set value
-
 
 @document_vars.quant_tracking_simple(_KAPPA_QUANT0)
 def get_kappa(obj, quant, KAPPA_QUANT=None, **kwargs):
@@ -1249,10 +1281,7 @@ def get_kappa(obj, quant, KAPPA_QUANT=None, **kwargs):
         return None
 
 
-# default
 _DEBYE_LN_QUANT = ('DEBYE_LN_QUANT', ['debye_ln'])
-# set value
-
 
 @document_vars.quant_tracking_simple(_DEBYE_LN_QUANT[0])
 def get_debye_ln(obj, quant, DEBYE_LN_QUANT=None, **kwargs):
@@ -1283,10 +1312,7 @@ def get_debye_ln(obj, quant, DEBYE_LN_QUANT=None, **kwargs):
                     part.astype('float64') + 1.0e-20))
 
 
-# default
 _IONP_QUANT0 = ('IONP_QUANT')
-# set value
-
 
 @document_vars.quant_tracking_simple(_IONP_QUANT0)
 def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
@@ -1384,15 +1410,12 @@ def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
         return None
 
 
-# default
 _AMB_QUANT = ('AMB_QUANT',
               ['uambx', 'uamby', 'uambz', 'ambx', 'amby', 'ambz',
                'eta_amb', 'eta_amb2', 'eta_amb3', 'eta_amb4', 'eta_amb5',
                'nchi', 'npsi', 'nchi_red', 'npsi_red',
                'rchi', 'rpsi', 'rchi_red', 'rpsi_red', 'alphai', 'betai']
               )
-# set value
-
 
 @document_vars.quant_tracking_simple(_AMB_QUANT[0])
 def get_ambparam(obj, quant, AMB_QUANT=None, **kwargs):
@@ -1579,13 +1602,10 @@ def get_ambparam(obj, quant, AMB_QUANT=None, **kwargs):
     return result
 
 
-# default
 _HALL_QUANT = ('HALL_QUANT',
                ['uhallx', 'uhally', 'uhallz', 'hallx', 'hally', 'hallz',
                 'eta_hall', 'eta_hallb']
                )
-# set value
-
 
 @document_vars.quant_tracking_simple(_HALL_QUANT[0])
 def get_hallparam(obj, quant, HALL_QUANT=None, **kwargs):
@@ -1630,13 +1650,10 @@ def get_hallparam(obj, quant, HALL_QUANT=None, **kwargs):
     return result  # obj.get_var('eta_hall') * result
 
 
-# default
 _BATTERY_QUANT = ('BATTERY_QUANT',
                   ['bb_constqe', 'dxpe', 'dype', 'dzpe',
                    'bb_batx', 'bb_baty', 'bb_batz']
                   )
-# set value
-
 
 @document_vars.quant_tracking_simple(_BATTERY_QUANT[0])
 def get_batteryparam(obj, quant, BATTERY_QUANT=None, **kwargs):
@@ -1686,10 +1703,7 @@ def get_batteryparam(obj, quant, BATTERY_QUANT=None, **kwargs):
     return result
 
 
-# default
 _SPITZER_QUANT = ('SPITZER_QUANT', ['fcx', 'fcy', 'fcz', 'qspitz'])
-# set value
-
 
 @document_vars.quant_tracking_simple(_BATTERY_QUANT[0])
 def get_spitzerparam(obj, quant, SPITZER_QUANT=None, **kwargs):
