@@ -889,25 +889,24 @@ def get_current(obj, quant, CURRENT_QUANT=None, **kwargs):
 
 
 _EFIELD_QUANT = ('EFIELD_QUANT', ['efx', 'efy', 'efz',
-                                  'uxb_x', 'uxb_y', 'uxb_z',
-                                  'jxb_x', 'jxb_y', 'jxb_z',
-                                  'jxbxb_x', 'jxbxb_y', 'jxbxb_z',
-                                  'ef_uxb_x', 'ef_uxb_y', 'ef_uxb_z',
-                                  'ef_jxbxb_x', 'ef_jxbxb_y', 'ef_jxbxb_z',
+                                  'uxb_x', 'uxb_y', 'uxb_z',        # just u x B
+                                  'jxb_x', 'jxb_y', 'jxb_z',        # just J x B
+                                  'jxbxb_x', 'jxbxb_y', 'jxbxb_z',  # just (J x B) x B
+                                  'ef_uxb_x', 'ef_uxb_y', 'ef_uxb_z',        # u x B term
+                                  'ef_jxb_x', 'ef_jxb_y', 'ef_jxb_z',        # J x B term  (hall)
+                                  'ef_jxbxb_x', 'ef_jxbxb_y', 'ef_jxbxb_z',  # (J x B) x B term (pederson)
                                   'ef_eta_ped',
-                                  'ef_vecxyzce', 'ef_jxbxb__vecxyzce',
-                                  # ef_uxb__vecxyzce also available, but no need to implement here,
-                                  #   since u & B are quite fast to load.
-                                  #   for details, see load_arithmetic_quantities.get_multi_quant.
                                   ])
 
 @document_vars.quant_tracking_simple(_EFIELD_QUANT[0])
 def get_efield(obj, quant, EFIELD_QUANT=None, **kwargs):
     '''
     Computes electric field, or terms in electric field.
+    All values are in [simu] units.
     '''
     # note - some terms here might have already been implemented in get_hallparam,
     #  but I wanted to implement these all here to be sure I got them right. - SE (2023/10/25)
+    # [TODO][EFF] maybe it would be better to just load centered vars, instead of doing all this interpolation...
     if EFIELD_QUANT is None:
         EFIELD_QUANT = _EFIELD_QUANT[1]
 
@@ -920,32 +919,15 @@ def get_efield(obj, quant, EFIELD_QUANT=None, **kwargs):
             docvar(f'uxb_{x}', f'{x}-component of u cross B. edge-centered.')
             docvar(f'jxb_{x}', f'{x}-component of J cross B. Here, J is from curl(B), never from aux. edge-centered.')
             docvar(f'jxbxb_{x}', f'{x}-component of (J cross B) cross B. Here, J is from curl(B), never from aux. edge-centered.')
+            docvar(f'ef_jxb_{x}', f'{x}-component of E{x} = (J cross B)_{x} / (ne qe). edge-centered.')
             docvar(f'ef_uxb_{x}', f'{x}-component of E{x} = (-u cross B)_{x}. edge-centered.')
             docvar(f'ef_jxbxb_{x}', f'{x}-component of E{x} = eta_amb * ((J cross B) cross B)_{x} / B^2. edge-centered.')
         docvar(f'ef_eta_ped', f'(eta_amb / B^2). centered at cell centers.')
-        docvar('ef_vecxyzce', f'ef, as a vector, shape=(nx,ny,nz,3). centered at cell centers. ' + 
-                                '[EFF] only calculates eta_amb once.')
-        docvar('ef_jxbxb__vecxyzce', f'ef_jxbxb_{x}, as a vector, shape=(nx,ny,nz,3). centered at cell centers. ' + 
-                                    '[EFF] only calculates eta_amb once.')
 
     if (quant == '') or (quant not in EFIELD_QUANT):
         return None
 
-    if quant.endswith('_vecxyzce'):  # [EFF] only calculate eta_amb once.
-        q0 = quant[:-len('_vecxyzce')]
-        if q0 == 'ef':
-            ef_uxb = obj('ef_uxb__vecxyzce')
-            ef_jxb = obj('ef_jxb__vecxyzce')
-            return ef_uxb + ef_jxb
-        elif q0 == 'ef_jxbxb_':
-            eta = obj('ef_eta_ped')
-            eta_ = np.asanyarray(eta)[..., np.newaxis]  # compatible shape with shape(jxb__vecxyzce)==(..., 3)
-            return eta_ * obj('jxbxb__vecxyzce')
-        # note: '{other_quant}_vecxyzce' handled by load_arithmetic_quantities.get_multi_quant;
-        #  e.g. other_quant = 'ef_uxb_', 'jxbxb_'.
-        else:
-            raise NotImplementedError(f'{quant!r} in get_efield.')
-    elif quant == 'ef_eta_ped':
+    if quant == 'ef_eta_ped':
         eta = obj('eta_amb')
         bmag = obj('b_mod')
         return eta / bmag**2
@@ -954,15 +936,23 @@ def get_efield(obj, quant, EFIELD_QUANT=None, **kwargs):
     if q == 'ef':
         ef_uxb = obj(f'ef_uxb_{x}')
         ef_jxb = obj(f'ef_jxb_{x}')
-        return ef_uxb + ef_jxb
+        ef_jxbxb = obj(f'ef_jxbxb_{x}')
+        return ef_uxb + ef_jxb + ef_jxbxb
     elif q in ('uxb_', 'ef_uxb_'):
         result = obj(f'u_facecross_b{x}')  # u face; B face; E edge
         if q == 'uxb_':
             return result
         else:  # q == 'ef_uxb_':
             return -result
-    elif q == 'jxb_':
-        return obj(f'j_edgefacecrosstoedge_b{x}') 
+    elif q in ('jxb_', 'ef_jxb_'):
+        result = obj(f'j_edgefacecrosstoedge_b{x}') 
+        if q == 'jxb_':
+            return result
+        else:  # q == 'ef_jxb_':
+            y, z = 'xyz'.replace(x, '')  # the other axes, in alphabetical order.
+            neqe_units = obj.uni('nr', 'simu', 'si') * obj.uni('qsi_e', 'simu')
+            neqe = obj(f'ne' + f'{y}dn{z}dn') * neqe_units    # [simu] units
+            return result / neqe
     elif q in ('jxbxb_', 'ef_jxbxb_'):
         result = obj(f'jxb__edgefacecrosstoedge_b{x}')  # JxB edge; B face; E edge
         if q == 'jxbxb_':
