@@ -789,10 +789,12 @@ def get_collision_ms(obj, quant, COLFRI_QUANT=None, **kwargs):
                 def cache_compatible(obj_):
                     return (cache.snap == obj_.snap) \
                         and (cache.CROSS_SECTION_INFO == obj_.CROSS_SECTION_INFO) \
-                        and (cache.units_output == obj_.units_output)
+                        and (cache.units_output == obj_.units_output) \
+                        and (cache.ELEMLIST == obj_.ELEMLIST)
                 cache.compatible = cache_compatible
                 cache.snap = obj.snap
                 cache.CROSS_SECTION_INFO = obj.CROSS_SECTION_INFO.copy()
+                cache.ELEMLIST = obj.ELEMLIST[:]
                 cache.units_output = obj.units_output
                 obj._cache_nu = cache
             cache[quant] = result
