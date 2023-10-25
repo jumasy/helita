@@ -859,7 +859,12 @@ class RotationManager3D():
         return result
 
     def rotate_vecs(self, vecs):
-        '''returns rotation_apply(self.rotation, vecs).'''
+        '''returns rotation_apply(self.rotation, vecs).
+        vecs: array of vectors.
+            should have shape (..., 3)
+            np.stack might be helpful in creating this vector,
+                e.g. use np.stack([vx, vy, vz], axis=-1) if you know vx, vy, vz separately.
+        '''
         rotation = self.rotation
         return rotation_apply(rotation, vecs)
 
