@@ -897,6 +897,7 @@ _EFIELD_QUANT = ('EFIELD_QUANT', ['efx', 'efy', 'efz',
                                   'ef_uxb_x', 'ef_uxb_y', 'ef_uxb_z',        # u x B term
                                   'ef_jxb_x', 'ef_jxb_y', 'ef_jxb_z',        # J x B term  (hall)
                                   'ef_jxbxb_x', 'ef_jxbxb_y', 'ef_jxbxb_z',  # (J x B) x B term (pederson)
+                                  'ef_un0_x', 'ef_un0_y', 'ef_un0_z',        # ef, without u x B term
                                   'ef_eta_ped',
                                   ])
 
@@ -924,6 +925,7 @@ def get_efield(obj, quant, EFIELD_QUANT=None, **kwargs):
             docvar(f'ef_jxb_{x}', f'{x}-component of E{x} = (J cross B)_{x} / (ne qe). edge-centered.')
             docvar(f'ef_uxb_{x}', f'{x}-component of E{x} = (-u cross B)_{x}. edge-centered.')
             docvar(f'ef_jxbxb_{x}', f'{x}-component of E{x} = eta_amb * ((J cross B) cross B)_{x} / B^2. edge-centered.')
+            docvar(f'ef_un0_{x}', f'{x}-component of E{x}, ignoring the (u cross B)_{x} contribution. edge-centered.')
         docvar(f'ef_eta_ped', f'(eta_amb / B^2). centered at cell centers.')
 
     if (quant == '') or (quant not in EFIELD_QUANT):
@@ -963,6 +965,10 @@ def get_efield(obj, quant, EFIELD_QUANT=None, **kwargs):
             y, z = 'xyz'.replace(x, '')  # the other axes, in alphabetical order.
             eta = obj('ef_eta_ped' + f'{y}dn{z}dn')  # align with E{x}.
             return eta * result 
+    elif q == 'ef_un0_':
+        ef_jxb = obj(f'ef_jxb_{x}')
+        ef_jxbxb = obj(f'ef_jxbxb_{x}')
+        return ef_jxb + ef_jxbxb
     else:
         raise NotImplementedError(f'{quant!r} in get_efield.')
 
