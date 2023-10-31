@@ -14,6 +14,9 @@ STAGGER KINDS DEFINED HERE:
                         "simplest" method available.
                         good enough, for most uses.
                         ~20% faster than numpy and numpy_improved methods
+    numpy_improved - improved 5th order scheme using numpy.
+                        the improvement refers to improved precision for "shift" operations.
+                        the improved scheme is also an implemented option in ebysus.
 
 
 METHODS DEFINED HERE (which an end-user might want to access):
@@ -73,8 +76,8 @@ except ImportError as err:
 PAD_PERIODIC = 'wrap'     # how to pad periodic dimensions, by default
 PAD_NONPERIODIC = 'reflect'  # how to pad nonperiodic dimensions, by default
 PAD_DEFAULTS = {'x': PAD_PERIODIC, 'y': PAD_PERIODIC, 'z': PAD_NONPERIODIC}   # default padding for each dimension.
-DEFAULT_STAGGER_KIND = 'fifth'  # which stagger kind to use by default.
-VALID_STAGGER_KINDS = tuple(('fifth', 'fifth_improved', 'first'))  # list of valid stagger kinds.
+DEFAULT_STAGGER_KIND = 'numpy_improved'  # which stagger kind to use by default.
+VALID_STAGGER_KINDS = tuple(('fifth', 'fifth_improved', 'first', 'numpy_improved'))  # list of valid stagger kinds.
 DEFAULT_MESH_LOCATION_TRACKING = False   # whether mesh location tracking should be enabled, by default.
 
 
@@ -248,6 +251,8 @@ def do(var, operation='xup', diff=None, pad_mode=None, stagger_kind=DEFAULT_STAG
         elif stagger_kind == 'fifth_improved':
             func = {'x': _xshift_improved, 'y': _yshift_improved, 'z': _zshift_improved}[x]
             result = func(out, out_diff, up=up, derivative=derivative)
+        elif stagger_kind=='numpy_improved':
+            result = _np_stagger_improved(out, out_diff, up, derivative, dim_index)
         else:
             raise ValueError(f"invalid stagger_kind: '{stagger_kind}'. Options are: {VALID_STAGGER_KINDS}")
     # tracking mesh location.
@@ -446,6 +451,47 @@ def _zshift_improved(var, diff, up=True, derivative=False):
                                                    var[i, j, k - 3 + grdshf] - var[i, j, k - 1 + grdshf]) +
                                               var[i, j, k - 1 + grdshf])
     return out[:, :, start:end]
+
+
+""" ------------------------ numpy stagger ------------------------ """
+
+## STAGGER_KIND = NUMPY_IMPROVED ##
+def _np_stagger_improved(var, diff, up, derivative, x):
+    """stagger along x axis. x should be 0, 1, or 2.
+    uses the "improved" stagger method, as implemented in stagger_mesh_improved_mpi.f90.
+        It subtracts f_0 from each term before multiplying, then adds f0 again at the end.
+        since a + b + c = 0.5 by definition,
+            a X + b Y + c Z == a (X - 2 f_0) + b (Y - 2 f_0) + c (Z - 2 f_0) + f_0
+    """
+    grdshf = 1 if up else 0
+    start  =   int(3. - grdshf)  
+    end    = - int(2. + grdshf)
+    # -- begin numpy syntax -- #
+    nx = var.shape[x]
+    def slx(shift):
+        '''return slicer at x axis from (start + shift) to (nx + end + shift).'''
+        return tools.slicer_at_ax((start+shift, nx+end+shift), x)
+    def sgx(shift):
+        '''return slicer at x axis from (start + shift + grdshf) to (nx + end + shift + grdshf)'''
+        return slx(shift + grdshf)
+    diff = np.expand_dims(diff,  axis=tuple( set((0,1,2)) - set((x,)) )  )   # make diff 3D (with size 1 for axes other than x)
+
+    if derivative:
+        # formula is exactly the same as regular numpy method. (though we use '-' instead of 'pm' with pm=-1)
+        a, b, c = CONSTANTS_DERIV
+        out = diff[slx(0)] * (a * (var[sgx(0)] - var[sgx(-1)]) + 
+                              b * (var[sgx(1)] - var[sgx(-2)]) +
+                              c * (var[sgx(2)] - var[sgx(-3)]))
+    else:
+        # here is where we see the 'improved' stagger method.
+        a, b, c = CONSTANTS_SHIFT
+        f0 = var[sgx(0)]
+        out = diff[slx(0)] * (a * (                   var[sgx(-1)] - f0) +    # note: the f0 - f0 term went away.
+                              b * (var[sgx(1)] - f0 + var[sgx(-2)] - f0) +
+                              c * (var[sgx(2)] - f0 + var[sgx(-3)] - f0)
+                              + f0)
+
+    return out
 
 
 """ ------------------------ MeshLocation, ArrayOnMesh ------------------------ """
