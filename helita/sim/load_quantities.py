@@ -319,14 +319,15 @@ def get_em(obj, quant, EM_QUANT=None,  *args, **kwargs):
     if (quant == '') or not quant in EM_QUANT:
         return None
 
-    sel_units = obj.sel_units
-    obj.sel_units = 'cgs'
+    sel_units_0 = obj.sel_units
+    try:
+        obj.sel_units = 'cgs'
 
-    rho = obj.get_var('totr')
-    en = obj.get_var('ne')
-    nh = rho / obj.uni.grph
-
-    obj.sel_units = sel_units
+        rho = obj.get_var('totr')
+        en = obj.get_var('ne')
+        nh = rho / obj.uni.grph
+    finally:
+        obj.sel_units = sel_units_0
 
     return en * (nh / unitsnorm)
 
@@ -445,12 +446,13 @@ def get_eosparam(obj, quant, EOSTAB_QUANT=None, **kwargs):
         if obj.hion and quant == 'ne':
             return obj.get_var('hionne') * fac
 
-        sel_units = obj.sel_units
-        obj.sel_units = 'cgs'
-        rho = obj.get_var('rho')
-        ee = obj.get_var('e') / rho
-
-        obj.sel_units = sel_units
+        sel_units_0 = obj.sel_units
+        try:
+            obj.sel_units = 'cgs'
+            rho = obj.get_var('rho')
+            ee = obj.get_var('e') / rho
+        finally:
+            obj.sel_units = sel_units_0
 
         if obj.verbose:
             print(quant + ' interpolation...', whsp*7, end="\r", flush=True)
@@ -1445,12 +1447,14 @@ def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
             return mass * obj.get_var('nhe%s' % lvl)
 
         else:
-            sel_units = obj.sel_units
-            obj.sel_units = 'cgs'
-            rho = obj.get_var('rho')
-            nel = np.copy(obj.get_var('ne'))  # cgs
-            tg = obj.get_var('tg')
-            obj.sel_units = sel_units
+            sel_units_0 = obj.sel_units
+            try:
+                obj.sel_units = 'cgs'
+                rho = obj.get_var('rho')
+                nel = np.copy(obj.get_var('ne'))  # cgs
+                tg = obj.get_var('tg')
+            finally:
+                obj.sel_units = sel_units_0
 
             if quant[0] == 'n':
                 dens = False
