@@ -620,13 +620,13 @@ class EbysusData(fluid_tools.Multifluid, BifrostData):
         # load quantities.
         val = load_fromfile_quantities(self, var, panic=panic, save_if_composite=False)
         if val is None:
+            val = load_mf_quantities(self, var)
+        if val is None:
             val = load_quantities(self, var, PLASMA_QUANT='',
                                   CYCL_RES='', COLFRE_QUANT='', COLFRI_QUANT='',
                                   IONP_QUANT='', EOSTAB_QUANT='', TAU_QUANT='',
                                   DEBYE_LN_QUANT='', CROSTAB_QUANT='',
                                   COULOMB_COL_QUANT='', AMB_QUANT='')
-        if val is None:
-            val = load_mf_quantities(self, var)
         if val is None:
             val = load_arithmetic_quantities(self, var)
         return val
