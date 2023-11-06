@@ -1858,6 +1858,7 @@ def get_spitzerparam(obj, quant, SPITZER_QUANT=None, **kwargs):
 
 ''' ------------- End get_quant() functions; Begin helper functions -------------  '''
 
+HELPER_FUNCS = ['calc_tau', 'elempopulations', 'ionpopulation']
 
 @njit(parallel=True)
 def calc_field_lines(x, y, z, bxc, byc, bzc, niter=501):
@@ -1963,63 +1964,81 @@ def calc_tau(obj):
     return tau
 
 
+def elempopulations(obj, **kwargs):
+    '''return dict of mass densities fractions of all elements in obj.ELEMLIST.
+    keys are element names as str, e.g. 'h', 'fe', ...
+    values are (mass density of element) / (total mass density of all elements)
+        values are single-valued; not arrays.
+    result is dimensionless.
+    '''
+    uni = obj.uni
+    # abundances; A(elem) = 12 + log10(n(elem)/n(H))
+    mabund = dict()  # dict of mass(element) * n(element) / n(H)  # [amu]
+    for el_ in obj.ELEMLIST:
+        mabund[el_] = uni.weightdic[el_] * 10**(uni.abnddic[el_] - 12.0)
+    mabund_sum = sum(mabund.values())   # total mass density / n(H)  # [amu]
+    mabund_frac = {el_: mabund[el_] / mabund_sum   # == mass(elem) * n(elem) / total mass density  # [dimensionless]
+                    for el_ in mabund}
+    # [EFF] no need to provide a "single-element" mode; these are single-values, not arrays.
+    return mabund_frac
+
+
 def ionpopulation(obj, rho, nel, tg, elem='h', lvl='1', dens=True, **kwargs):
     '''
-    rho is cgs.
-    tg in [K]
-    nel in cgs.
-    The output, is in cgs
+    return number density of an element at a given ionization level.
+    Uses saha ionization equation and photospheric abundances (by default).
+    Abundances values are pulled from obj.abnddic.
+
+    All quantities in cgs units.
+
+    obj: object, probably BifrostData object
+    rho: total mass density
+    nel: electron number density
+    tg: temperature [K]
+    elem: string, element name, e.g., 'h'. Must appear in obj.ELEMLIST.
+    lvl: string, ionization level
+        '1' --> neutral
+        '2' --> once-ionized
+        all other values are not currently supported;
+        this function assumes all other ionization levels are negligible.
+    dens: bool, whether to return mass density (if True) or number density (if False)
     '''
 
     if getattr(obj, 'verbose', True):
         print('ionpopulation: reading species %s and level %s' % (elem, lvl), whsp,
               end="\r", flush=True)
-    '''
-  fdir = '.'
-  try:
-    tmp = find_first_match("*.idl", fdir)
-  except IndexError:
-    try:
-      tmp = find_first_match("*idl.scr", fdir)
-    except IndexError:
-      try:
-        tmp = find_first_match("mhd.in", fdir)
-      except IndexError:
-        tmp = ''
-        print("(WWW) init: no .idl or mhd.in files found." +
-              "Units set to 'standard' Bifrost units.")
-  '''
     uni = obj.uni
 
-    totconst = 2.0 * uni.pi * uni.m_electron * uni.k_b / \
-        uni.hplanck / uni.hplanck
-    abnd = np.zeros(len(uni.abnddic))
-    count = 0
+    mabund_fracs = elempopulations(obj, **kwargs)  # {el_: mass(el_) * n(el_) / total mass density}
+    mabund_frac = mabund_fracs[elem]   # mass(elem) * n(elem) / total mass density
+    rho_elem = mabund_frac * rho   # mass(elem) * n(elem)  # [cgs]
 
-    for ibnd in uni.abnddic.keys():
-        abnddic = 10**(uni.abnddic[ibnd] - 12.0)
-        abnd[count] = abnddic * uni.weightdic[ibnd] * uni.amu
-        count += 1
+    # Saha ionization equation:
+    # n1/n0 = (1/ne) * (2.0 / ldebroge^3) * (u1 / u0) * exp(-xi / T)
+    #   where n1 is number density of once-ionized; n0 is number density of neutral;
+    #   ne is electron number density; u1 and u0 are partition functions to account for degeneracy of states;
+    #   ldebroge is electron thermal deBroglie wavelength, ldebroge^2 = hplanck^2 / (2 pi me kB T);
+    #   xi is first ionization energy; T is temperature (in same units as xi).
+    ldebroge_const = (2.0 * uni.pi * uni.m_electron * uni.k_b / uni.hplanck**2)**1.5
+    ldebroge_mul = ldebroge_const * tg**1.5  # == (electron thermal deBroglie wavelength)^(-3)   # [cgs]
+    n1_n0 = (1/nel) * 2.0 * ldebroge_mul * (uni.u1dic[elem] / uni.u0dic[elem]) * \
+            np.exp(- uni.xidic[elem] / (tg / uni.ev_to_k))  # exp(-first ionization energy [eV] / T [eV])
+    n1_frac = n1_n0 / (1.0 + n1_n0)   # n1/n0 / (n1/n0 + 1) == n1 / (n1 + n0)
+    # assuming n(elem) == n1 + n0, can now extract n1 & n0. assumes twice+ ionized states are negligible.
 
-    abnd = abnd / np.sum(abnd)
-    phit = (totconst * tg)**(1.5) * 2.0 / nel
-    kbtg = uni.ev_to_erg / uni.k_b / tg
-    n1_n0 = phit * uni.u1dic[elem] / uni.u0dic[elem] * np.exp(
-        - uni.xidic[elem] * kbtg)
-    c2 = abnd[uni.atomdic[elem] - 1] * rho
-    ifracpos = n1_n0 / (1.0 + n1_n0)
-
-    if dens:
-        if lvl == '1':
-            return (1.0 - ifracpos) * c2
-        else:
-            return ifracpos * c2
-
+    if lvl == '1':  # neutral; "n0"
+        n0_frac = 1.0 - n1_frac    # 1 - (n1 / (n1 + n0)) == n0 / (n1 + n0)
+        n_frac = n0_frac
+    elif lvl == '2':  # once-ionized; "n1"
+        n_frac = n1_frac
     else:
-        if lvl == '1':
-            return (1.0 - ifracpos) * c2 / uni.weightdic[elem] / uni.amu
-        else:
-            return ifracpos * c2 / uni.weightdic[elem] / uni.amu
+        raise NotImplementedError(f'lvl {lvl!r} not supported')
+
+    if dens:  # mass density
+        return n_frac * rho_elem   # (ni / n(elem)) * (mass(elem) * n(elem)) == ni * mass(elem);  ni=n(elem at level)
+    else:  # number density
+        m = uni.weightdic[elem] * uni.amu   # [cgs]
+        return n_frac * rho_elem / m   # (ni / n(elem)) * (mass(elem) * n(elem)) / mass(elem) == ni
 
 
 def find_first_match(name, path, incl_path=False, **kwargs):

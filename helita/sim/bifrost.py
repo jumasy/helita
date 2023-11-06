@@ -17,10 +17,10 @@ import numpy as np
 from scipy import interpolate
 from scipy.ndimage import map_coordinates
 
+# import internal modules
 from . import document_vars, file_memory, load_fromfile_quantities, stagger, tools, units
 from .load_arithmetic_quantities import *
-
-# import internal modules
+from . import load_quantities as load_quantities_module
 from .load_quantities import *
 from .plotting import Plottable3D
 from .tools import *   # [TODO] explicit imports instead of import *
@@ -2990,6 +2990,15 @@ def constant_colfreq_cross_table_str(tg0, Q0, **kw):
     ccc = constant_colfreq_cross(tg0, Q0, **kw)
     result = cross_table_str(**ccc, comment=comment)
     return result
+
+
+############################
+#  MISC. HELPFUL FUNCTIONS #
+############################
+
+# attach load_quantities helper functions to BifrostData class
+for _name in load_quantities_module.HELPER_FUNCS:
+    setattr(BifrostData, _name, getattr(load_quantities_module, _name))
 
 
 ###########

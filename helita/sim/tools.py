@@ -238,24 +238,30 @@ def globalvars(obj):
     # Dissociation energy of H2 [eV] from Barklem & Collet (2016)
     obj.di = obj.eh2diss
 
+    # atom index (1-indexed for some reason, maybe to correspond to fortran indexing?)
     obj.atomdic = {'h': 1, 'he': 2, 'c': 3, 'n': 4, 'o': 5, 'ne': 6, 'na': 7,
                    'mg': 8, 'al': 9, 'si': 10, 's': 11, 'k': 12, 'ca': 13,
                    'cr': 14, 'fe': 15, 'ni': 16}
+    # photospheric abundances, defined as A(elem) = 12 + log10(n(elem)/n(H))
     obj.abnddic = {'h': 12.0, 'he': 11.0, 'c': 8.55, 'n': 7.93, 'o': 8.77,
                    'ne': 8.51, 'na': 6.18, 'mg': 7.48, 'al': 6.4, 'si': 7.55,
-                   's': 5.21, 'k': 5.05, 'ca': 6.33, 'cr': 5.47, 'fe': 7.5,
+                   's': 7.21, 'k': 5.05, 'ca': 6.33, 'cr': 5.47, 'fe': 7.5,
                    'ni': 5.08}
+    # atomic weight [amu]
     obj.weightdic = {'h': 1.008, 'he': 4.003, 'c': 12.01, 'n': 14.01,
                      'o': 16.00, 'ne': 20.18, 'na': 23.00, 'mg': 24.32,
                      'al': 26.97, 'si': 28.06, 's': 32.06, 'k': 39.10,
                      'ca': 40.08, 'cr': 52.01, 'fe': 55.85, 'ni': 58.69}
+    # first ionization energy [ev]
     obj.xidic = {'h': 13.595, 'he': 24.580, 'c': 11.256, 'n': 14.529,
                  'o': 13.614, 'ne': 21.559, 'na': 5.138, 'mg': 7.644,
                  'al': 5.984, 'si': 8.149, 's': 10.357, 'k': 4.339,
                  'ca': 6.111, 'cr': 6.763, 'fe': 7.896, 'ni': 7.633}
+    # partition function, for Saha eqn; not-ionized state
     obj.u0dic = {'h': 2., 'he': 1., 'c': 9.3, 'n': 4., 'o': 8.7,
                  'ne': 1., 'na': 2., 'mg': 1., 'al': 5.9, 'si': 9.5, 's': 8.1,
                  'k': 2.1, 'ca': 1.2, 'cr': 10.5, 'fe': 26.9, 'ni': 29.5}
+    # partition function, for Saha eqn; once-ionized state
     obj.u1dic = {'h': 1., 'he': 2., 'c': 6., 'n': 9.,  'o': 4.,  'ne': 5.,
                  'na': 1., 'mg': 2., 'al': 1., 'si': 5.7, 's': 4.1, 'k': 1.,
                  'ca': 2.2, 'cr': 7.2, 'fe': 42.7, 'ni': 10.5}
