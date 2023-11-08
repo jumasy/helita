@@ -389,6 +389,14 @@ def refine(s, q, factor=2, unscale=lambda x: x):
 ''' --------------------- restore attrs --------------------- '''
 
 
+def maintaining_attrs(self, *attrs):
+    '''returns context manager which restores attrs of self to their original values, upon exit.'''
+    return MaintainingAttrs(self, *attrs)
+
+def using_attrs(self, **attrs):
+    '''returns context manager which sets attrs of obj upon entry; restores original values upon exit.'''
+    return UsingAttrs(self, **attrs)
+
 def maintain_attrs(*attrs):
     '''return decorator which restores attrs of obj after running function.
     It is assumed that obj is the first arg of function.
@@ -403,49 +411,7 @@ def maintain_attrs(*attrs):
         return f_but_maintain_attrs
     return attr_restorer
 
-
-class MaintainingAttrs():
-    '''context manager which restores attrs of obj to their original values, upon exit.'''
-
-    def __init__(self, obj, *attrs):
-        self.obj = obj
-        self.attrs = attrs
-
-    def __enter__(self):
-        self.memory = dict()
-        for attr in self.attrs:
-            if hasattr(self.obj, attr):
-                self.memory[attr] = getattr(self.obj, attr)
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        for attr, val in self.memory.items():
-            setattr(self.obj, attr, val)
-
-
-def maintaining_attrs(self, *attrs):
-    '''returns context manager which restores attrs of self to their original values, upon exit.'''
-    return MaintainingAttrs(self, *attrs)
-
-
-class UsingAttrs(MaintainingAttrs):
-    '''context manager which sets attrs of obj upon entry; restores original values upon exit.'''
-
-    def __init__(self, obj, **attrs):
-        self.obj = obj
-        self.attrs = attrs
-
-    def __enter__(self):
-        super().__enter__()
-        for attr, val in self.attrs.items():
-            setattr(self.obj, attr, val)
-
-
-def using_attrs(self, **attrs):
-    '''returns context manager which sets attrs of obj upon entry; restores original values upon exit.'''
-    return UsingAttrs(self, **attrs)
-
-
-def with_attrs(**attrs_and_values):
+def use_attrs(**attrs_and_values):
     '''return decorator which sets attrs of object before running function then restores them after.
     It is assumed that obj is the first arg of function.
     '''
@@ -460,6 +426,48 @@ def with_attrs(**attrs_and_values):
                 return f(obj, *args, **kwargs)
         return f_but_set_then_restore_attrs
     return attr_setter_then_restorer
+
+with_attrs = use_attrs   # alias
+
+class MaintainingAttrs():
+    '''context manager which restores attrs of obj to their original values, upon exit.
+    This includes deleting any of those attrs upon exit which did not exist upon entry.
+    '''
+    def __init__(self, obj, *attrs):
+        self.obj = obj
+        self.attrs = attrs
+
+    def __enter__(self):
+        self.memory = dict()  # remember original values
+        self.unset = set()    # remember which attrs did not exist
+        for attr in self.attrs:
+            if hasattr(self.obj, attr):
+                self.memory[attr] = getattr(self.obj, attr)
+            else:
+                self.unset.add(attr)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        for attr, val in self.memory.items():
+            setattr(self.obj, attr, val)
+        for attr in self.unset:
+            try:
+                delattr(self.obj, attr)
+            except AttributeError:
+                pass  # << self.obj.attr is not defined, but that's perfectly ok.
+
+
+class UsingAttrs(MaintainingAttrs):
+    '''context manager which sets attrs of obj upon entry; restores original values upon exit.
+    This includes deleting any of those attrs upon exit which did not exist upon entry.
+    '''
+    def __init__(self, obj, **attrs):
+        self.obj = obj
+        self.attrs = attrs
+
+    def __enter__(self):
+        super().__enter__()
+        for attr, val in self.attrs.items():
+            setattr(self.obj, attr, val)
 
 
 class EnterDir:

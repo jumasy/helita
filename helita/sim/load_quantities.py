@@ -1,12 +1,18 @@
 # import builtins
 import warnings
+import re
 
 # import external public modules
 import numpy as np
 
 # import internal modules
-from . import document_vars, tools
+from . import document_vars
 from .load_arithmetic_quantities import do_stagger
+
+from .tools import (
+    ImportFailed, boring_decorator,
+    using_attrs,
+)
 
 # from glob import glob   # this is only used for find_first_match which is never called...
 
@@ -14,9 +20,9 @@ from .load_arithmetic_quantities import do_stagger
 try:
     from numba import jit, njit, prange
 except ImportError as err:
-    numba = prange = tools.ImportFailed('numba',
+    numba = prange = ImportFailed('numba',
             "This is used by some helper functions in load_quantities.", err=err)
-    jit = njit = tools.boring_decorator
+    jit = njit = boring_decorator
 
 # import the potentially-relevant things from the internal module "units"
 from .units import UNI_nr
@@ -319,15 +325,10 @@ def get_em(obj, quant, EM_QUANT=None,  *args, **kwargs):
     if (quant == '') or not quant in EM_QUANT:
         return None
 
-    sel_units_0 = obj.sel_units
-    try:
-        obj.sel_units = 'cgs'
-
+    with using_attrs(obj, sel_units='cgs'):
         rho = obj.get_var('totr')
         en = obj.get_var('ne')
         nh = rho / obj.uni.grph
-    finally:
-        obj.sel_units = sel_units_0
 
     return en * (nh / unitsnorm)
 
@@ -446,13 +447,9 @@ def get_eosparam(obj, quant, EOSTAB_QUANT=None, **kwargs):
         if obj.hion and quant == 'ne':
             return obj.get_var('hionne') * fac
 
-        sel_units_0 = obj.sel_units
-        try:
-            obj.sel_units = 'cgs'
+        with using_attrs(obj, sel_units='cgs'):
             rho = obj.get_var('rho')
             ee = obj.get_var('e') / rho
-        finally:
-            obj.sel_units = sel_units_0
 
         if obj.verbose:
             print(quant + ' interpolation...', whsp*7, end="\r", flush=True)
@@ -1379,6 +1376,9 @@ def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
     '''
     densities for specific ionized species.
     For example, nc-1 gives number density of neutral carbon, in cm^-3. nc-2 is for once-ionized carbon.
+    using 'r' gives mass density (in cgs units) instead, e.g. "rc-1".
+
+    Note that changing obj.hion or obj.heion may affect the result.
     '''
     if (IONP_QUANT is None):
         IONP_QUANT = obj.IONP_QUANT
@@ -1426,50 +1426,51 @@ def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
 
         return result
 
-    elif ''.join([i for i in quant if not i.isdigit()]) in IONP_QUANT:
-        elem = quant.replace('-', '')
-        spic = ''.join([i for i in elem if not i.isdigit()])
-        lvl = ''.join([i for i in elem if i.isdigit()])
-
-        if obj.hion and spic[1:] == 'h':
-            if quant[0] == 'n':
-                mass = 1.0
-            else:
-                mass = obj.uni.m_h
-            if lvl == '1':
-                return mass * (obj.get_var('n1') + obj.get_var('n2') + obj.get_var('n3') +
-                               obj.get_var('n4') + obj.get_var('n5'))
-            else:
-                return mass * obj.get_var('n6')
-
-        elif obj.heion and spic[1:] == 'he':
-            if quant[0] == 'n':
-                mass = 1.0
-            else:
-                mass = obj.uni.m_he
-            if obj.verbose:
-                print('get_var: reading nhe%s' % lvl, whsp*5, end="\r",
-                      flush=True)
-            return mass * obj.get_var('nhe%s' % lvl)
-
-        else:
-            sel_units_0 = obj.sel_units
-            try:
-                obj.sel_units = 'cgs'
-                rho = obj.get_var('rho')
-                nel = np.copy(obj.get_var('ne'))  # cgs
-                tg = obj.get_var('tg')
-            finally:
-                obj.sel_units = sel_units_0
-
-            if quant[0] == 'n':
-                dens = False
-            else:
-                dens = True
-
-            return ionpopulation(obj, rho, nel, tg, elem=spic[1:], lvl=lvl, dens=dens)  # cm^3
-    else:
+    # else,
+    pattern = '([rn])([a-z]+)[-]([0-9]+)'  # '{r or n}{at least 1 letter}-{at least 1 number}'. e.g. 'nfe-2', 'ns-12'
+    match = re.fullmatch(pattern, quant)
+    if not match:
         return None
+    n_or_r, elem, lvl = match.groups()
+    if f'{n_or_r}{elem}-' not in IONP_QUANT:  # elem not recognized.
+        return None
+
+    hion = getattr(obj, 'hion', False)
+    if hion and elem == 'h':
+        if lvl == '1':
+            result = sum(obj.get_var(v_) for v_ in ('n1', 'n2', 'n3', 'n4', 'n5'))
+        elif lvl == '2':
+            result = obj.get_var('n6')
+        else:
+            raise ValueError(f'lvl should be 1 or 2, but got {lvl!r}, when getting {n}h-lvl, with obj.hion True')
+        result = result * (1.0 if n_or_r=='n' else obj.uni.m_h)  # convert to mass density if needed.
+        # ^note, to ensure result doesn't link to original data, don't use *=. And, keep the *1.0.
+        return result
+
+    elif getattr(obj, 'heion') and elem == 'he':
+        if obj.verbose:
+            print('get_var: reading nhe%s' % lvl, whsp*5, end="\r",
+                  flush=True)
+        result = obj.get_var('nhe%s' % lvl)
+        result = result * (1.0 if n_or_r=='n' else obj.uni.m_he)  # convert to mass density if needed.
+        # ^note, to ensure result doesn't link to original data, don't use *=. And, keep the *1.0.
+        return result
+
+    elif hion and not getattr(obj, 'hion_debug_ionp_old', False):  # and not 'h' & hion, or 'he' and heion...
+        with using_attrs(obj, sel_units='cgs'):
+            nH = obj('nh-1') + obj('nh-2')
+            ne = obj('ne')
+            tg = obj('tg')
+        return hion_ionpopulation(obj, elem=elem, nH=nH, ne=ne, tg=tg, lvl=lvl, dens=(n_or_r=='r'))  # [cgs]
+
+    else:  # not a special case; use ionpopulation.
+        with using_attrs(obj, sel_units='cgs'):
+            rho = obj.get_var('rho')
+            nel = obj.get_var('ne')
+            tg = obj.get_var('tg')
+
+        return ionpopulation(obj, rho, nel, tg, elem=elem, lvl=lvl, dens=(n_or_r=='r'))  # [cgs]
+    assert False, "this line should not be reached; if it is reached there was a coding error."
 
 
 _AMB_QUANT = ('AMB_QUANT',
@@ -1858,7 +1859,7 @@ def get_spitzerparam(obj, quant, SPITZER_QUANT=None, **kwargs):
 
 ''' ------------- End get_quant() functions; Begin helper functions -------------  '''
 
-HELPER_FUNCS = ['calc_tau', 'elempopulations', 'ionpopulation']
+HELPER_FUNCS = ['calc_tau', 'elempopulations', 'saha_n1n0', 'ionpopulation', 'hion_ionpopulation']
 
 @njit(parallel=True)
 def calc_field_lines(x, y, z, bxc, byc, bzc, niter=501):
@@ -1964,7 +1965,7 @@ def calc_tau(obj):
     return tau
 
 
-def elempopulations(obj, **kwargs):
+def elempopulations(obj, **kw__None):
     '''return dict of mass densities fractions of all elements in obj.ELEMLIST.
     keys are element names as str, e.g. 'h', 'fe', ...
     values are (mass density of element) / (total mass density of all elements)
@@ -1983,11 +1984,42 @@ def elempopulations(obj, **kwargs):
     return mabund_frac
 
 
+def saha_n1n0(obj, ne, tg, elem='h', **kw__None):
+    '''return (n1 / n0) for elem, given electron number density and tg.
+    n1 and n0 are number density of once-ionized and neutral, respectively.
+        Assumes the Saha ionization equation:
+            n1/n0 = (1/ne) * (2.0 / lde^3) * (u1 / u0) * exp(-xi / T)
+        where:
+            n1 is number density of once-ionized, for this elem
+            n0 is number density of neutral, for this elem
+            ne is electron number density
+            u1, u0 are partition functions to account for degeneracy of states
+            lde is electron thermal deBroglie wavelength; lde^2 = hplanck^2 / (2 pi me kB T)
+            xi is first ionization energy
+            T is temperature (in same units as xi)
+
+    ne: numerical value, possibly array
+        electron number density in cgs
+    tg: numerical value, possibly array
+        temperature in K
+    elem: str
+        element name; must appear in obj.uni.xidic, obj.uni.u1dic, obj.uni.u0dic
+
+    returns (n1/n0) for elem.
+    '''
+    uni = obj.uni
+    ldebroge_const = (2.0 * uni.pi * uni.m_electron * uni.k_b / uni.hplanck**2)**1.5
+    ldebroge_mul = ldebroge_const * tg**1.5  # == (electron thermal deBroglie wavelength)^(-3)   # [cgs]
+    n1_n0 = (1/ne) * 2.0 * ldebroge_mul * (uni.u1dic[elem] / uni.u0dic[elem]) * \
+            np.exp(- uni.xidic[elem] / (tg / uni.ev_to_k))  # exp(-first ionization energy [eV] / T [eV])
+    return n1_n0
+
+
 def ionpopulation(obj, rho, nel, tg, elem='h', lvl='1', dens=True, **kwargs):
     '''
     return number density of an element at a given ionization level.
     Uses saha ionization equation and photospheric abundances (by default).
-    Abundances values are pulled from obj.abnddic.
+    Abundances values are pulled from obj.uni.abnddic.
 
     All quantities in cgs units.
 
@@ -2003,7 +2035,6 @@ def ionpopulation(obj, rho, nel, tg, elem='h', lvl='1', dens=True, **kwargs):
         this function assumes all other ionization levels are negligible.
     dens: bool, whether to return mass density (if True) or number density (if False)
     '''
-
     if getattr(obj, 'verbose', True):
         print('ionpopulation: reading species %s and level %s' % (elem, lvl), whsp,
               end="\r", flush=True)
@@ -2013,18 +2044,11 @@ def ionpopulation(obj, rho, nel, tg, elem='h', lvl='1', dens=True, **kwargs):
     mabund_frac = mabund_fracs[elem]   # mass(elem) * n(elem) / total mass density
     rho_elem = mabund_frac * rho   # mass(elem) * n(elem)  # [cgs]
 
-    # Saha ionization equation:
-    # n1/n0 = (1/ne) * (2.0 / ldebroge^3) * (u1 / u0) * exp(-xi / T)
-    #   where n1 is number density of once-ionized; n0 is number density of neutral;
-    #   ne is electron number density; u1 and u0 are partition functions to account for degeneracy of states;
-    #   ldebroge is electron thermal deBroglie wavelength, ldebroge^2 = hplanck^2 / (2 pi me kB T);
-    #   xi is first ionization energy; T is temperature (in same units as xi).
-    ldebroge_const = (2.0 * uni.pi * uni.m_electron * uni.k_b / uni.hplanck**2)**1.5
-    ldebroge_mul = ldebroge_const * tg**1.5  # == (electron thermal deBroglie wavelength)^(-3)   # [cgs]
-    n1_n0 = (1/nel) * 2.0 * ldebroge_mul * (uni.u1dic[elem] / uni.u0dic[elem]) * \
-            np.exp(- uni.xidic[elem] / (tg / uni.ev_to_k))  # exp(-first ionization energy [eV] / T [eV])
+    n1_n0 = saha_n1n0(obj, nel, tg, elem=elem, **kwargs)  # n1/n0 for elem  # [dimensionless]
+
     n1_frac = n1_n0 / (1.0 + n1_n0)   # n1/n0 / (n1/n0 + 1) == n1 / (n1 + n0)
-    # assuming n(elem) == n1 + n0, can now extract n1 & n0. assumes twice+ ionized states are negligible.
+    # assuming (n1 + n0) == n(elem), can now extract n1 & n0. This assumes twice+ ionized states are negligible.
+
 
     if lvl == '1':  # neutral; "n0"
         n0_frac = 1.0 - n1_frac    # 1 - (n1 / (n1 + n0)) == n0 / (n1 + n0)
@@ -2041,30 +2065,58 @@ def ionpopulation(obj, rho, nel, tg, elem='h', lvl='1', dens=True, **kwargs):
         return n_frac * rho_elem / m   # (ni / n(elem)) * (mass(elem) * n(elem)) / mass(elem) == ni
 
 
-def find_first_match(name, path, incl_path=False, **kwargs):
+def hion_ionpopulation(obj, elem, *, nH, ne, tg, lvl='1', dens=False, **kwargs):
+    '''return number density of an element at a given ionization level, assuming obj.hion=True.
+    This assumes nH = number density of hydrogen element (neutral + ions).
+    if nH is not known (due to running the LTE case), use the ionpopulation function instead.
+
+    Steps:
+        1) determine n(elem), i.e. the number density of elem, given nH,
+            and the abundance of elem from obj.uni.abnddic[elem].
+            abundance(elem) is defined as 12 + log10(n(elem) / n(hydrogen))
+        2) determine n(elem_once_ionized) / n(elem_neutral), from saha equation
+        3) assume n(elem) == n(elem_once_ionized) + n(elem_neutral).
+            this is equivalent to assuming twice+ ionized states are negligible.
+        4) now it's just algebra to get n(elem_neutral) and/or n(elem_once_ionized), as desired.
+
+    All quantities in cgs units.
+
+    obj: object, probably BifrostData object
+    nel: electron number density
+    tg: temperature [K]
+    elem: string, element name
+        e.g., 'fe'. Must appear in obj.ELEMLIST.
+        Cannot be 'h'; this function assumes nH is known.
+    lvl: string, ionization level
+        '1' --> neutral
+        '2' --> once-ionized
+        all other values are not currently supported;
+        this function assumes all other ionization levels are negligible.
+    dens: bool, whether to return mass density (if True) or number density (if False)
     '''
-    This will find the first match,
-    name : string, e.g., 'patern*'
-    incl_root: boolean, if true will add full path, otherwise, the name.
-    path : sring, e.g., '.'
-    '''
-    errmsg = ('find_first_match() from load_quantities has been deprecated. '
-              'If you believe it should not be deprecated, you can easily restore it by going to '
-              'helita.sim.load_quantities and doing the following: '
-              '(1) uncomment the "from glob import glob" at top of the file; '
-              '(2) edit the find_first_match function: remove this error and uncomment the code. '
-              '(3) please put a comment to explain where load_quantities.find_first_match() is used, '
-              ' since it is not being used anywhere in the load_quantities file directly.')
-    raise Exception(errmsg)
-    """
-  originalpath=os.getcwd()
-  os.chdir(path)
-  for file in glob(name):
-    if incl_path:
-      os.chdir(originalpath)
-      return os.path.join(path, file)
+    if getattr(obj, 'verbose', False):
+        print(f'hion_ionpopulation: calculating n{elem}{lvl}', whsp, end="\r", flush=True)
+    if elem == 'h':
+        raise ValueError('elem cannot be "h" during hion_ionpopulation')
+    uni = obj.uni
+    # step 1
+    n_elem = 10**(uni.abnddic[elem] - 12.0) * nH   # number density of elem  # [cgs]
+    # step 2
+    n1_n0 = saha_n1n0(obj, ne, tg, elem=elem, **kwargs)  # n1/n0 for elem  # [dimensionless]
+    # step 3 & 4
+    n1_frac = n1_n0 / (1.0 + n1_n0)   # n1/n0 / (n1/n0 + 1) == n1 / (n1 + n0)
+
+    if lvl == '1':  # neutral; "n0"
+        n0_frac = 1.0 - n1_frac    # 1 - (n1 / (n1 + n0)) == n0 / (n1 + n0)
+        n_frac = n0_frac
+    elif lvl == '2':  # once-ionized; "n1"
+        n_frac = n1_frac
     else:
-      os.chdir(originalpath)
-      return file
-  os.chdir(originalpath)
-  """
+        raise NotImplementedError(f'lvl {lvl!r} not supported')
+    n_elem_lvl = n_frac * n_elem   # number density of elem at lvl  # [cgs]
+
+    if dens:  # mass density
+        m = uni.weightdic[elem] * uni.amu   # [cgs]
+        return m * n_elem_lvl
+    else:  # number density
+        return n_elem_lvl
