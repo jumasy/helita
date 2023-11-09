@@ -1459,6 +1459,8 @@ def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
     elif hion and not getattr(obj, 'hion_debug_ionp_old', False):  # and not 'h' & hion, or 'he' and heion...
         with using_attrs(obj, sel_units='cgs'):
             nH = obj('nh-1') + obj('nh-2')
+            if not getattr(obj, 'hion_debug_no_nh2', False):
+                nH = nH + 2 * obj('nh2')  # add contribution of molecular hydrogen.
             ne = obj('ne')
             tg = obj('tg')
         return hion_ionpopulation(obj, elem=elem, nH=nH, ne=ne, tg=tg, lvl=lvl, dens=(n_or_r=='r'))  # [cgs]
