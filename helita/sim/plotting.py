@@ -43,7 +43,7 @@ class Plottable3D():
     def imshow(self, var_or_vals, axes=None, *, at_x=None, at_y=None, at_z=None,
                log=False, usi_key=None, ucgs_key=None,
                coord_units='si', xcoord_transform=None, ycoord_transform=None,
-               colorbar=True, cbar_label=None, kw_cbar=dict(), sca_cbar=False,
+               colorbar=True, cbar_label=None, kw_cbar=dict(), kw_make_cax=dict(), sca_cbar=False,
                origin=NO_VALUE, extent=NO_VALUE, flipz=False,
                interpolation='none',
                **kw__imshow):
@@ -84,6 +84,8 @@ class Plottable3D():
             if provided and colorbar=True, label the colorbar with this label
         kw_cbar: dict
             pass these kwargs to plt.colorbar()
+        kw_make_cax: dict
+            pass these kwargs to tools.make_cax()
         sca_cbar: bool, default False
             whether to set current axis to the colorbar axis.
             if False, instead ensure current axis is the image axis.
@@ -152,7 +154,7 @@ class Plottable3D():
         plt.title(title)
         # handle the colorbar
         if colorbar:
-            cax = make_cax()
+            cax = make_cax(**kw_make_cax)
             cbar = plt.colorbar(cax=cax, label=cbar_label, **kw_cbar)
             if not sca_cbar:
                 plt.sca(image_axis)  # set current axis to image_axis instead of colorbar.

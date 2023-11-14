@@ -27,7 +27,7 @@ except ImportError as err:
 # import the potentially-relevant things from the internal module "units"
 from .units import UNI_nr
 
-DEFAULT_ELEMLIST = ['h', 'he', 'c', 'o', 'ne', 'na', 'mg', 'al', 'si', 's', 'k', 'ca', 'cr', 'fe', 'ni']
+DEFAULT_ELEMLIST = ['h', 'he', 'c', 'n', 'o', 'ne', 'na', 'mg', 'al', 'si', 's', 'k', 'ca', 'cr', 'fe', 'ni']
 
 # setup DEFAULT_CROSS_DICT
 cross_dict = dict()
