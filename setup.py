@@ -35,11 +35,6 @@ extras['all'] = list(chain.from_iterable(ex_extras.values()))
 ################################################################################
 NUMPY_INC = numpy.get_include()
 EXT_PACKAGES = {
-    "anapyio": ["io", [NUMPY_INC, os.path.join("helita", "io/src")],
-                [os.path.join("helita", "io/anapyio.pyx"),
-                 os.path.join("helita", "io/src/libf0.c"),
-                 os.path.join("helita", "io/src/anacompress.c"),
-                 os.path.join("helita", "io/src/anadecompress.c")]],
     "radtrans": ["utils", [NUMPY_INC],
                  [os.path.join("helita", "utils/radtrans.pyx")]],
     "utilsfast": ["utils", [NUMPY_INC],
