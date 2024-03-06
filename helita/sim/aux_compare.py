@@ -88,8 +88,8 @@ from . import fluid_tools, tools
 # import external private modules
 try:
     from atom_py.at_tools import fluids as fl
-except ImportError:
-    fl = tools.ImportFailed('at_tools.fluids')
+except ImportError as err:
+    fl = tools.ImportFailed('at_tools.fluids', err=err)
 
 # set defaults
 DEFAULT_TOLERANCE = 0.05    # the max for (1-abs(X/Y)) before we think X != Y

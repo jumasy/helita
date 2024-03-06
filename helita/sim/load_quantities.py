@@ -13,8 +13,9 @@ from .load_arithmetic_quantities import do_stagger
 
 try:
     from numba import jit, njit, prange
-except ImportError:
-    numba = prange = tools.ImportFailed('numba', "This module is required to use stagger_kind='numba'.")
+except ImportError as err:
+    numba = prange = tools.ImportFailed('numba',
+            "This is used by some helper functions in load_quantities.", err=err)
     jit = njit = tools.boring_decorator
 
 # import the potentially-relevant things from the internal module "units"
@@ -148,7 +149,7 @@ def set_crossdict_as_needed(obj, **kwargs):
     '''sets all things related to cross_dict.
     Use None to restore default values.
 
-    e.g. get_var(..., maxwell=None) retores to using default value for maxwell (False).
+    e.g. get_var(..., maxwell=None) restores to using default value for maxwell (False).
     Defaults:
       maxwell: False
       cross_tab: None
@@ -158,6 +159,11 @@ def set_crossdict_as_needed(obj, **kwargs):
         cross_dict['h2','he1'] = cross_dict['he1','h2'] = 'p-he.txt'
         cross_dict['e','he1'] = cross_dict['he1','e'] = 'e-he.txt'
         cross_dict['e','h1']  = cross_dict['h1','e']  = 'e-h.txt'
+
+    when maxwell is True,
+        use maxwell collisions whenever cross dict is not available for species pair.
+    when maxwell is False,
+        use a (very bad???) guess for cross section instead.
     '''
     if not hasattr(obj, 'CROSS_SECTION_INFO'):
         obj.CROSS_SECTION_INFO = dict()
@@ -187,6 +193,7 @@ def load_quantities(obj, quant, *args__None, PLASMA_QUANT=None, CYCL_RES=None,
                     KAPPA_QUANT=None, GYROF_QUANT=None, WAVE_QUANT=None,
                     FLUX_QUANT=None, CURRENT_QUANT=None, COLCOU_QUANT=None,
                     COLCOUMS_QUANT=None, COLFREMX_QUANT=None, EM_QUANT=None,
+                    EFIELD_QUANT=None,
                     POND_QUANT=None, **kwargs):
     '''loads or calculates the value of single-fluid quantity quant.
 
@@ -247,6 +254,7 @@ def load_quantities(obj, quant, *args__None, PLASMA_QUANT=None, CYCL_RES=None,
         (get_crossections, 'CROSTAB_QUANT'),
         (get_collision_ms, 'COLFRI_QUANT'),
         (get_current, 'CURRENT_QUANT'),
+        (get_efield, 'EFIELD_QUANT'),
         (get_flux, 'FLUX_QUANT'),
         (get_plasmaparam, 'PLASMA_QUANT'),
         (get_wavemode, 'WAVE_QUANT'),
@@ -278,10 +286,7 @@ def load_quantities(obj, quant, *args__None, PLASMA_QUANT=None, CYCL_RES=None,
     return val
 
 
-# default
 _EM_QUANT = ('EM_QUANT', ['emiss'])
-# get value
-
 
 @document_vars.quant_tracking_simple(_EM_QUANT[0])
 def get_em(obj, quant, EM_QUANT=None,  *args, **kwargs):
@@ -314,22 +319,20 @@ def get_em(obj, quant, EM_QUANT=None,  *args, **kwargs):
     if (quant == '') or not quant in EM_QUANT:
         return None
 
-    sel_units = obj.sel_units
-    obj.sel_units = 'cgs'
+    sel_units_0 = obj.sel_units
+    try:
+        obj.sel_units = 'cgs'
 
-    rho = obj.get_var('totr')
-    en = obj.get_var('ne')
-    nh = rho / obj.uni.grph
-
-    obj.sel_units = sel_units
+        rho = obj.get_var('totr')
+        en = obj.get_var('ne')
+        nh = rho / obj.uni.grph
+    finally:
+        obj.sel_units = sel_units_0
 
     return en * (nh / unitsnorm)
 
 
-# default
 _CROSTAB_QUANT0 = ('CROSTAB_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_CROSTAB_QUANT0)
 def get_crossections(obj, quant, CROSTAB_QUANT=None, **kwargs):
@@ -397,16 +400,13 @@ def get_crossections(obj, quant, CROSTAB_QUANT=None, **kwargs):
     # -- return result -- #
     try:
         return cross
-    except Exception:
-        print('(WWW) cross-section: wrong combination of species', end="\r",
-              flush=True)
-        return None
+    except NameError:  # cross not yet defined.
+        errmsg = (f'no applicable cross section for {quant!r}, using settings from self.CROSS_SECTION_INFO.'
+                  ' Maybe you meant to use maxwell=False?')
+        raise ValueError(errmsg) from None
 
 
-# default
 _EOSTAB_QUANT = ('EOSTAB_QUANT', ['ne', 'tg', 'pg', 'kr', 'eps', 'opa', 'temt', 'ent'])
-# get value
-
 
 @document_vars.quant_tracking_simple(_EOSTAB_QUANT[0])
 def get_eosparam(obj, quant, EOSTAB_QUANT=None, **kwargs):
@@ -446,12 +446,13 @@ def get_eosparam(obj, quant, EOSTAB_QUANT=None, **kwargs):
         if obj.hion and quant == 'ne':
             return obj.get_var('hionne') * fac
 
-        sel_units = obj.sel_units
-        obj.sel_units = 'cgs'
-        rho = obj.get_var('rho')
-        ee = obj.get_var('e') / rho
-
-        obj.sel_units = sel_units
+        sel_units_0 = obj.sel_units
+        try:
+            obj.sel_units = 'cgs'
+            rho = obj.get_var('rho')
+            ee = obj.get_var('e') / rho
+        finally:
+            obj.sel_units = sel_units_0
 
         if obj.verbose:
             print(quant + ' interpolation...', whsp*7, end="\r", flush=True)
@@ -460,10 +461,7 @@ def get_eosparam(obj, quant, EOSTAB_QUANT=None, **kwargs):
             rho, ee, order=1, out=quant) * fac
 
 
-# default
 _COLFRE_QUANT0 = ('COLFRE_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLFRE_QUANT0)
 def get_collision(obj, quant, COLFRE_QUANT=None, **kwargs):
@@ -489,12 +487,13 @@ def get_collision(obj, quant, COLFRE_QUANT=None, **kwargs):
     ion2 = ''.join([i for i in elem[1] if i.isdigit()])
     spic1 = spic1[2:]
 
-    crossarr = get_crossections(obj, '%s%s_%s%s' % (spic1, ion1, spic2, ion2), **kwargs)
-
-    if np.any(crossarr) == None:
+    try:
+        crossarr = get_crossections(obj, '%s%s_%s%s' % (spic1, ion1, spic2, ion2), **kwargs)
+    except ValueError:
+        # no applicable cross section, so use maxwell.
         return get_collision_maxw(obj, 'numx'+quant[2:], **kwargs)
     else:
-
+        # found an applicable cross section.
         nspic2 = obj.get_var('n%s-%s' % (spic2, ion2))
         if np.size(elem) > 2:
             nspic2 *= (1.0-obj.get_var('kappanorm_%s' % spic2))
@@ -514,10 +513,7 @@ def get_collision(obj, quant, COLFRE_QUANT=None, **kwargs):
             scr1 * nspic2  # * (awg1 / (awg1 + awg1))
 
 
-# default
 _COLFREMX_QUANT0 = ('COLFREMX_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLFREMX_QUANT0)
 def get_collision_maxw(obj, quant, COLFREMX_QUANT=None, **kwargs):
@@ -576,10 +572,7 @@ def get_collision_maxw(obj, quant, COLFREMX_QUANT=None, **kwargs):
         return CONST_MULT * nspic2 * np.sqrt(CONST_ALPHA_N * e_charge**2 * awg2 / (eps0 * awg1 * (awg1 + awg2)))
 
 
-# default
 _COLCOU_QUANT0 = ('COLCOU_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLCOU_QUANT0)
 def get_collcoul(obj, quant, COLCOU_QUANT=None, **kwargs):
@@ -617,10 +610,7 @@ def get_collcoul(obj, quant, COLCOU_QUANT=None, **kwargs):
         nspic2 / tg**1.5 * (int(ion2)-1)**2
 
 
-# default
 _COLCOUMS_QUANT0 = ('COLCOUMS_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLCOUMS_QUANT0)
 def get_collcoul_ms(obj, quant, COLCOUMS_QUANT=None, **kwargs):
@@ -662,10 +652,7 @@ def get_collcoul_ms(obj, quant, COLCOUMS_QUANT=None, **kwargs):
     return result
 
 
-# default
 _COLFRI_QUANT0 = ('COLFRI_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COLFRI_QUANT0)
 def get_collision_ms(obj, quant, COLFRI_QUANT=None, **kwargs):
@@ -692,7 +679,22 @@ def get_collision_ms(obj, quant, COLFRI_QUANT=None, **kwargs):
     if (quant[0:2] != 'nu') or (not ''.join([i for i in quant if not i.isdigit()]) in COLFRI_QUANT):
         return None
 
-    elif quant in ('nu_ni_mag', 'nu_ni', 'numx_ni_mag', 'numx_ni'):
+    # OPTIONAL: RETURN CACHED VALUE FOR NU. (if cache_nu is False or not defined, does nothing.)
+    #  the desire for caching nu comes from, e.g., nu_ni needs to get colfreqs for each neutral / ion pair...
+    if getattr(obj, 'cache_nu', False):
+        try:
+            cache = obj._cache_nu
+        except AttributeError:
+            pass
+        else:
+            cache = obj._cache_nu
+            if quant in cache:
+                if cache.compatible(obj):  # e.g., same snap, same cross section info, same units output.
+                    if getattr(obj, 'cache_nu_verbose', False):
+                        print(f'using cached value for {quant!r}')
+                    return cache[quant]
+
+    if quant in ('nu_ni_mag', 'nu_ni', 'numx_ni_mag', 'numx_ni'):
         result = obj.zero()
         s_nu, _, ni_mag = quant.partition('_')  # s_numx = nu or numx
         for ielem in obj.ELEMLIST:
@@ -769,13 +771,40 @@ def get_collision_ms(obj, quant, COLFRI_QUANT=None, **kwargs):
                 getting = '{nu}{elem}_{ielem}{mag}'.format(nu=nu, elem=elem, ielem=ielem, mag=mag)
                 result += obj.get_var(getting, **kwargs)
 
+    # OPTIONAL: CACHING NU -- requires user to set obj.cache_nu = True.
+    if getattr(obj, 'cache_nu', False):
+        cacheables = getattr(obj, 'CACHING_NU_QUANTS',  # default, only cache nu if it is a sum of nu values.
+                             ['nu_ni_mag', 'nu_ni', 'numx_ni_mag', 'numx_ni',
+                             'nu_in_mag', 'nu_in',
+                             'nu_ei', 'nu_en'])
+        if quant in cacheables:
+            try:
+                cache = obj._cache_nu
+            except AttributeError:
+                need_new_cache = True
+            else:
+                need_new_cache = (not cache.compatible(obj))
+            if need_new_cache:  # [TODO] maybe the cache tool should be defined elsewhere...
+                class NuCache(dict):  # required because can't set attributes of dict()
+                    pass   # but can set attributes of subclass of dict().
+                cache = NuCache()
+                def cache_compatible(obj_):
+                    return (cache.snap == obj_.snap) \
+                        and (cache.CROSS_SECTION_INFO == obj_.CROSS_SECTION_INFO) \
+                        and (cache.units_output == obj_.units_output) \
+                        and (cache.ELEMLIST == obj_.ELEMLIST)
+                cache.compatible = cache_compatible
+                cache.snap = obj.snap
+                cache.CROSS_SECTION_INFO = obj.CROSS_SECTION_INFO.copy()
+                cache.ELEMLIST = obj.ELEMLIST[:]
+                cache.units_output = obj.units_output
+                obj._cache_nu = cache
+            cache[quant] = result
+
     return result
 
 
-# default
 _COULOMB_COL_QUANT0 = ('COULOMB_COL_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_COULOMB_COL_QUANT0)
 def get_coulomb(obj, quant, COULOMB_COL_QUANT=None, **kwargs):
@@ -808,10 +837,8 @@ def get_coulomb(obj, quant, COULOMB_COL_QUANT=None, **kwargs):
             (np.sqrt(tg.astype('Float64')**3) + 1.0e-20))
 
 
-# default
-_CURRENT_QUANT = ('CURRENT_QUANT', ['ix', 'iy', 'iz', 'wx', 'wy', 'wz'])
-# get value
-
+_CURRENT_QUANT = ('CURRENT_QUANT', ['ix', 'iy', 'iz', 'wx', 'wy', 'wz',
+                                    'jx', 'jy', 'jz'])
 
 @document_vars.quant_tracking_simple(_CURRENT_QUANT[0])
 def get_current(obj, quant, CURRENT_QUANT=None, **kwargs):
@@ -830,19 +857,23 @@ def get_current(obj, quant, CURRENT_QUANT=None, **kwargs):
         docvar('wx',  'component x of the rotational of the velocity')
         docvar('wy',  'component y of the rotational of the velocity')
         docvar('wz',  'component z of the rotational of the velocity')
+        for x in 'xyz':
+            docvar(f'j{x}', f'{x}-component of the current; always from curl(B)/mu0. i{x} may be from aux.')
 
     if (quant == '') or not quant in CURRENT_QUANT:
         return None
 
     # Calculate derivative of quantity
     axis = quant[-1]
+    if quant[0] == 'j':
+        return obj(f'curvecb{axis}') / obj.uni('mu0')   # curl(B) = mu0 J
     if quant[0] == 'i':
         q = 'b'
     else:
         q = 'u'
     try:
         getattr(obj, quant)
-    except AttributeError:
+    except AttributeError:  # not in aux.
         if axis == 'x':
             varsn = ['z', 'y']
             derv = ['dydn', 'dzdn']
@@ -861,14 +892,100 @@ def get_current(obj, quant, CURRENT_QUANT=None, **kwargs):
                 obj.get_var('d' + q + varsn[1] + derv[1]))
 
 
-# default
+_EFIELD_QUANT = ('EFIELD_QUANT', ['efx', 'efy', 'efz',
+                                  'uxb_x', 'uxb_y', 'uxb_z',        # just u x B
+                                  'jxb_x', 'jxb_y', 'jxb_z',        # just J x B
+                                  'jxbxb_x', 'jxbxb_y', 'jxbxb_z',  # just (J x B) x B
+                                  'ef_uxb_x', 'ef_uxb_y', 'ef_uxb_z',        # u x B term
+                                  'ef_jxb_x', 'ef_jxb_y', 'ef_jxb_z',        # J x B term  (hall)
+                                  'ef_jxbxb_x', 'ef_jxbxb_y', 'ef_jxbxb_z',  # (J x B) x B term (pederson)
+                                  'ef_un0_x', 'ef_un0_y', 'ef_un0_z',        # ef, without u x B term
+                                  'e_un0_x', 'e_un0_y', 'e_un0_z',  # e (from aux), minus ef_uxb_
+                                  'ef_eta_ped',
+                                  ])
+
+@document_vars.quant_tracking_simple(_EFIELD_QUANT[0])
+def get_efield(obj, quant, EFIELD_QUANT=None, **kwargs):
+    '''
+    Computes electric field, or terms in electric field.
+    All values are in [simu] units.
+    '''
+    # note - some terms here might have already been implemented in get_hallparam,
+    #  but I wanted to implement these all here to be sure I got them right. - SE (2023/10/25)
+    # [TODO][EFF] maybe it would be better to just load centered vars, instead of doing all this interpolation...
+    if EFIELD_QUANT is None:
+        EFIELD_QUANT = _EFIELD_QUANT[1]
+
+    if quant == '':
+        docvar = document_vars.vars_documenter(obj, _EFIELD_QUANT[0], EFIELD_QUANT, get_efield.__doc__)
+        AXES = ('x', 'y', 'z')
+        for x in AXES:
+            docvar(f'ef{x}', f'{x}-component of the electric field, calculated using B & eta_amb. edge-centered.' + 
+                            f'E{x} = (-u cross B)_{x} + eta_amb * ((J cross B) cross B)_{x} / |B|^2.')
+            docvar(f'uxb_{x}', f'{x}-component of u cross B. edge-centered.')
+            docvar(f'jxb_{x}', f'{x}-component of J cross B. Here, J is from curl(B), never from aux. edge-centered.')
+            docvar(f'jxbxb_{x}', f'{x}-component of (J cross B) cross B. Here, J is from curl(B), never from aux. edge-centered.')
+            docvar(f'ef_jxb_{x}', f'{x}-component of E{x} = (J cross B)_{x} / (ne qe). edge-centered.')
+            docvar(f'ef_uxb_{x}', f'{x}-component of E{x} = (-u cross B)_{x}. edge-centered.')
+            docvar(f'ef_jxbxb_{x}', f'{x}-component of E{x} = eta_amb * ((J cross B) cross B)_{x} / B^2. edge-centered.')
+            docvar(f'ef_un0_{x}', f'{x}-component of E{x}, ignoring the (u cross B)_{x} contribution. edge-centered.')
+            docvar(f'e_un0_{x}', f'{x}-component of E{x} from aux, subtracting the (-u cross B)_{x} contribution. edge-centered.')
+        docvar(f'ef_eta_ped', f'(eta_amb / B^2). centered at cell centers.')
+
+    if (quant == '') or (quant not in EFIELD_QUANT):
+        return None
+
+    if quant == 'ef_eta_ped':
+        eta = obj('eta_amb')
+        bmag = obj('b_mod')
+        return eta / bmag**2
+    # else, quant ends with 'x', 'y', or 'z'
+    q, x = quant[:-1], quant[-1]
+    if q == 'ef':
+        ef_uxb = obj(f'ef_uxb_{x}')
+        ef_jxb = obj(f'ef_jxb_{x}')
+        ef_jxbxb = obj(f'ef_jxbxb_{x}')
+        return ef_uxb + ef_jxb + ef_jxbxb
+    elif q in ('uxb_', 'ef_uxb_'):
+        result = obj(f'u_facecross_b{x}')  # u face; B face; E edge
+        if q == 'uxb_':
+            return result
+        else:  # q == 'ef_uxb_':
+            return -result
+    elif q in ('jxb_', 'ef_jxb_'):
+        result = obj(f'j_edgefacecrosstoedge_b{x}') 
+        if q == 'jxb_':
+            return result
+        else:  # q == 'ef_jxb_':
+            y, z = 'xyz'.replace(x, '')  # the other axes, in alphabetical order.
+            neqe_units = obj.uni('nr', 'simu', 'si') * obj.uni('qsi_e', 'simu')
+            neqe = obj(f'ne' + f'{y}dn{z}dn') * neqe_units    # [simu] units
+            return result / neqe
+    elif q in ('jxbxb_', 'ef_jxbxb_'):
+        result = obj(f'jxb__edgefacecrosstoedge_b{x}')  # JxB edge; B face; E edge
+        if q == 'jxbxb_':
+            return result
+        else:  # q == 'ef_jxbxb_':
+            y, z = 'xyz'.replace(x, '')  # the other axes, in alphabetical order.
+            eta = obj('ef_eta_ped' + f'{y}dn{z}dn')  # align with E{x}.
+            return eta * result 
+    elif q == 'ef_un0_':
+        ef_jxb = obj(f'ef_jxb_{x}')
+        ef_jxbxb = obj(f'ef_jxbxb_{x}')
+        return ef_jxb + ef_jxbxb
+    elif q == 'e_un0_':
+        e = obj(f'e{x}')
+        ef_uxb = obj(f'ef_uxb_{x}')
+        return e - ef_uxb
+    else:
+        raise NotImplementedError(f'{quant!r} in get_efield.')
+
+
 _FLUX_QUANT = ('FLUX_QUANT',
                ['pfx',  'pfy',  'pfz',
                 'pfex', 'pfey', 'pfez',
                 'pfwx', 'pfwy', 'pfwz']
                )
-# get value
-
 
 @document_vars.quant_tracking_simple(_FLUX_QUANT[0])
 def get_flux(obj, quant, FLUX_QUANT=None, **kwargs):
@@ -915,12 +1032,9 @@ def get_flux(obj, quant, FLUX_QUANT=None, **kwargs):
     return var
 
 
-# default
 _POND_QUANT = ('POND_QUANT',
                ['pond']
                )
-# get value
-
 
 @document_vars.quant_tracking_simple(_POND_QUANT[0])
 def get_ponderomotive(obj, quant, POND_QUANT=None, **kwargs):
@@ -970,14 +1084,11 @@ def get_ponderomotive(obj, quant, POND_QUANT=None, **kwargs):
         do_stagger(dpond, 'ddzdn', obj=obj)*ibzc
 
 
-# default
 _PLASMA_QUANT = ('PLASMA_QUANT',
                  ['beta', 'beta_ion', 'va', 'cs', 's', 'ke', 'mn', 'man', 'hp', 'nr',
                   'vax', 'vay', 'vaz', 'hx', 'hy', 'hz', 'kx', 'ky', 'kz',
                   ]
                  )
-# get value
-
 
 @document_vars.quant_tracking_simple(_PLASMA_QUANT[0])
 def get_plasmaparam(obj, quant, PLASMA_QUANT=None, **kwargs):
@@ -1068,10 +1179,7 @@ def get_plasmaparam(obj, quant, PLASMA_QUANT=None, **kwargs):
         return nr_H * obj.uni.mu      # mu is correction factor since plasma isn't just H.
 
 
-# default
 _WAVE_QUANT = ('WAVE_QUANT', ['alf', 'fast', 'long'])
-# get value
-
 
 @document_vars.quant_tracking_simple(_WAVE_QUANT[0])
 def get_wavemode(obj, quant, WAVE_QUANT=None, **kwargs):
@@ -1128,10 +1236,7 @@ def get_wavemode(obj, quant, WAVE_QUANT=None, **kwargs):
     return result
 
 
-# default
 _CYCL_RES = ('CYCL_RES', ['n6nhe2', 'n6nhe3', 'nhe2nhe3'])
-# get value
-
 
 @document_vars.quant_tracking_simple(_CYCL_RES[0])
 def get_cyclo_res(obj, quant, CYCL_RES=None, **kwargs):
@@ -1168,10 +1273,7 @@ def get_cyclo_res(obj, quant, CYCL_RES=None, **kwargs):
                           'avaiable if do_hion and do_helium is true'))
 
 
-# default
 _GYROF_QUANT0 = ('GYROF_QUANT')
-# get value
-
 
 @document_vars.quant_tracking_simple(_GYROF_QUANT0)
 def get_gyrof(obj, quant, GYROF_QUANT=None, **kwargs):
@@ -1201,14 +1303,11 @@ def get_gyrof(obj, quant, GYROF_QUANT=None, **kwargs):
             (obj.uni.weightdic[quant[2:-1]] * obj.uni.amusi)
 
 
-# default
 #_KAPPA_QUANT = ['kappa' + elem for elem in ELEMLIST]
 #_KAPPA_QUANT = ['kappanorm_', 'kappae'] + _KAPPA_QUANT
 # I suspect that ^^^ should be kappanorm_ + elem for elem in ELEMLIST,
 # but I don't know what kappanorm is supposed to mean, so I'm not going to change it now. -SE June 28 2021
 _KAPPA_QUANT0 = ('KAPPA_QUANT')
-# set value
-
 
 @document_vars.quant_tracking_simple(_KAPPA_QUANT0)
 def get_kappa(obj, quant, KAPPA_QUANT=None, **kwargs):
@@ -1242,10 +1341,7 @@ def get_kappa(obj, quant, KAPPA_QUANT=None, **kwargs):
         return None
 
 
-# default
 _DEBYE_LN_QUANT = ('DEBYE_LN_QUANT', ['debye_ln'])
-# set value
-
 
 @document_vars.quant_tracking_simple(_DEBYE_LN_QUANT[0])
 def get_debye_ln(obj, quant, DEBYE_LN_QUANT=None, **kwargs):
@@ -1276,10 +1372,7 @@ def get_debye_ln(obj, quant, DEBYE_LN_QUANT=None, **kwargs):
                     part.astype('float64') + 1.0e-20))
 
 
-# default
 _IONP_QUANT0 = ('IONP_QUANT')
-# set value
-
 
 @document_vars.quant_tracking_simple(_IONP_QUANT0)
 def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
@@ -1360,12 +1453,14 @@ def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
             return mass * obj.get_var('nhe%s' % lvl)
 
         else:
-            sel_units = obj.sel_units
-            obj.sel_units = 'cgs'
-            rho = obj.get_var('rho')
-            nel = np.copy(obj.get_var('ne'))  # cgs
-            tg = obj.get_var('tg')
-            obj.sel_units = sel_units
+            sel_units_0 = obj.sel_units
+            try:
+                obj.sel_units = 'cgs'
+                rho = obj.get_var('rho')
+                nel = np.copy(obj.get_var('ne'))  # cgs
+                tg = obj.get_var('tg')
+            finally:
+                obj.sel_units = sel_units_0
 
             if quant[0] == 'n':
                 dens = False
@@ -1377,15 +1472,12 @@ def get_ionpopulations(obj, quant, IONP_QUANT=None, **kwargs):
         return None
 
 
-# default
 _AMB_QUANT = ('AMB_QUANT',
               ['uambx', 'uamby', 'uambz', 'ambx', 'amby', 'ambz',
                'eta_amb', 'eta_amb2', 'eta_amb3', 'eta_amb4', 'eta_amb5',
                'nchi', 'npsi', 'nchi_red', 'npsi_red',
                'rchi', 'rpsi', 'rchi_red', 'rpsi_red', 'alphai', 'betai']
               )
-# set value
-
 
 @document_vars.quant_tracking_simple(_AMB_QUANT[0])
 def get_ambparam(obj, quant, AMB_QUANT=None, **kwargs):
@@ -1434,6 +1526,7 @@ def get_ambparam(obj, quant, AMB_QUANT=None, **kwargs):
         result = (obj.get_var('rneu') / obj.get_var('rho') * u_b)**2
         result /= (4.0 * obj.uni.pi * obj.get_var('nu_ni', **kwargs) + 1e-20)
         result *= obj.get_var('b2')  # / 1e7
+        # cache result
 
     # This should be the same and eta_amb2 except that eta_amb2 has many more species involved.
     elif quant == 'eta_amb2':
@@ -1572,13 +1665,10 @@ def get_ambparam(obj, quant, AMB_QUANT=None, **kwargs):
     return result
 
 
-# default
 _HALL_QUANT = ('HALL_QUANT',
                ['uhallx', 'uhally', 'uhallz', 'hallx', 'hally', 'hallz',
                 'eta_hall', 'eta_hallb']
                )
-# set value
-
 
 @document_vars.quant_tracking_simple(_HALL_QUANT[0])
 def get_hallparam(obj, quant, HALL_QUANT=None, **kwargs):
@@ -1623,13 +1713,10 @@ def get_hallparam(obj, quant, HALL_QUANT=None, **kwargs):
     return result  # obj.get_var('eta_hall') * result
 
 
-# default
 _BATTERY_QUANT = ('BATTERY_QUANT',
                   ['bb_constqe', 'dxpe', 'dype', 'dzpe',
                    'bb_batx', 'bb_baty', 'bb_batz']
                   )
-# set value
-
 
 @document_vars.quant_tracking_simple(_BATTERY_QUANT[0])
 def get_batteryparam(obj, quant, BATTERY_QUANT=None, **kwargs):
@@ -1679,10 +1766,7 @@ def get_batteryparam(obj, quant, BATTERY_QUANT=None, **kwargs):
     return result
 
 
-# default
 _SPITZER_QUANT = ('SPITZER_QUANT', ['fcx', 'fcy', 'fcz', 'qspitz'])
-# set value
-
 
 @document_vars.quant_tracking_simple(_BATTERY_QUANT[0])
 def get_spitzerparam(obj, quant, SPITZER_QUANT=None, **kwargs):

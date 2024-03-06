@@ -631,33 +631,48 @@ class ImportFailedError(ImportError):
 class ImportFailed():
     '''set modules which fail to import to be instances of this class;
     initialize with modulename, additional_error_message.
-    when attempting to access any attribute of the ImportFailed object,
-      raises ImportFailedError('. '.join(modulename, additional_error_message)).
+    when attempting to call or access any attribute of the ImportFailed object,
+        raises ImportFailedError('. '.join(modulename, additional_error_message)).
+        If err is provided, also include err in the error message.
     Also, if IMPORT_FAILURE_WARNINGS, make warning immediately when initialized.
 
     Example:
     try:
       import zarr
-    except ImportError:
-      zarr = ImportFailed('zarr', 'This module is required for compressing data.')
+    except ImportError as err:
+      zarr = ImportFailed('zarr', 'This module is required for compressing data.', err=err)
 
     zarr.load(...)   # << attempt to use zarr
     # if zarr was imported successfully, it will work fine.
     # if zarr failed to import, this error will be raised:
          ImportFailedError: zarr. This module is required for compressing data.
+         The original ImportError error was: No module named 'zarr'
     '''
-
-    def __init__(self, modulename, additional_error_message=''):
+    def __init__(self, modulename, additional_error_message='', *, err=None):
         self.modulename = modulename
         self.additional_error_message = additional_error_message
+        self.err = err
         if IMPORT_FAILURE_WARNINGS:
-            warnings.warn(f'Failed to import module {modulename}.{additional_error_message}')
+            warnings.warn(f'Failed to import module {self.error_message()}')
 
-    def __getattr__(self, attr):
+    def error_message(self):
         str_add = str(self.additional_error_message)
         if len(str_add) > 0:
             str_add = '. ' + str_add
-        raise ImportFailedError(self.modulename + str_add)
+        result = self.modulename + str_add
+        if self.err is not None:
+            result += f'\nThe original ImportError was: {self.err}'
+        return result
+
+    def __getattr__(self, attr):
+        '''tells how to do self.attr when it would otherwise fail.
+        Here, raise ImportFailedError.
+        '''
+        raise ImportFailedError(self.error_message())
+
+    def __call__(self, *args__None, **kw__None):
+        '''tells how to call self, e.g. self(...). Here, raise ImportFailedError.'''
+        raise ImportFailedError(self.error_message())
 
     def __repr__(self):
         return f'{type(self).__name__}({repr(self.modulename)})'
@@ -844,7 +859,12 @@ class RotationManager3D():
         return result
 
     def rotate_vecs(self, vecs):
-        '''returns rotation_apply(self.rotation, vecs).'''
+        '''returns rotation_apply(self.rotation, vecs).
+        vecs: array of vectors.
+            should have shape (..., 3)
+            np.stack might be helpful in creating this vector,
+                e.g. use np.stack([vx, vy, vz], axis=-1) if you know vx, vy, vz separately.
+        '''
         rotation = self.rotation
         return rotation_apply(rotation, vecs)
 

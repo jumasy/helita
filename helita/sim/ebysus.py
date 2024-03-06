@@ -67,20 +67,20 @@ import numpy as np
 
 try:
     import zarr
-except ImportError:
-    zarr = tools.ImportFailed('zarr')
+except ImportError as err:
+    zarr = tools.ImportFailed('zarr', err=err)
 
 # import external private modules
 try:
     from atom_py.at_tools import atom_tools as at
     at_tools_exists = True
-except:
+except ImportError as err:
     at_tools_exists = False
-    at = tools.ImportFailed('atom_py.at_tools.atom_tools')
+    at = tools.ImportFailed('atom_py.at_tools.atom_tools', err=err)
 try:
     from atom_py.at_tools import fluids as fl
-except ImportError:
-    fl = tools.ImportFailed('at_tools.fluids')
+except ImportError as err:
+    fl = tools.ImportFailed('at_tools.fluids', err=err)
 
 # set defaults:
 from .load_mf_quantities import MATCH_AUX, MATCH_PHYSICS
@@ -620,13 +620,13 @@ class EbysusData(fluid_tools.Multifluid, BifrostData):
         # load quantities.
         val = load_fromfile_quantities(self, var, panic=panic, save_if_composite=False)
         if val is None:
+            val = load_mf_quantities(self, var)
+        if val is None:
             val = load_quantities(self, var, PLASMA_QUANT='',
                                   CYCL_RES='', COLFRE_QUANT='', COLFRI_QUANT='',
                                   IONP_QUANT='', EOSTAB_QUANT='', TAU_QUANT='',
                                   DEBYE_LN_QUANT='', CROSTAB_QUANT='',
                                   COULOMB_COL_QUANT='', AMB_QUANT='')
-        if val is None:
-            val = load_mf_quantities(self, var)
         if val is None:
             val = load_arithmetic_quantities(self, var)
         return val

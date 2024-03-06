@@ -17,8 +17,8 @@ from .load_mf_quantities import MATCH_AUX, MATCH_PHYSICS
 # import external private modules
 try:
     from atom_py.at_tools import fluids as fl
-except ImportError:
-    fl = tools.ImportFailed('at_tools.fluids')
+except ImportError as err:
+    fl = tools.ImportFailed('at_tools.fluids', err=err)
 
 # set defaults
 HIDE_DECORATOR_TRACEBACKS = True  # whether to hide decorators from this file when showing error traceback.

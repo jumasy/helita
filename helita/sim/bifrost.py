@@ -159,6 +159,7 @@ class BifrostData(Plottable3D):
             self.dtype = '<' + dtype
         self.hion = False
         self.heion = False
+        self.transunits = False
 
         try:
             tmp = find_first_match("%s*idl" % file_root, fdir)
@@ -178,7 +179,6 @@ class BifrostData(Plottable3D):
         self.set_domain_iiaxes(iix=iix, iiy=iiy, iiz=iiz, internal=False)
 
         self.genvar()
-        self.transunits = False
         self.cross_sect = cross_sect_for_obj(self)
         if 'tabinputfile' in self.params.keys():
             tabfile = os.path.join(self.fdir, self.get_param('tabinputfile').strip())
@@ -409,6 +409,11 @@ class BifrostData(Plottable3D):
         # Do not call if params_only requested
         if (not params_only):
             self._init_vars(firstime=firstime)
+        if self.sel_units == 'cgs':
+            self.dx *= self.uni.uni['l']
+            self.dy *= self.uni.uni['l']
+            self.dz *= self.uni.uni['l']
+
 
     def _read_params(self, firstime=False):
         """
@@ -622,14 +627,12 @@ class BifrostData(Plottable3D):
             self.x *= self.uni.uni['l']
             self.y *= self.uni.uni['l']
             self.z *= self.uni.uni['l']
+            self.xdn *= self.uni.uni['l']
+            self.ydn *= self.uni.uni['l']
             self.zdn *= self.uni.uni['l']
-            self.dx *= self.uni.uni['l']
-            self.dy *= self.uni.uni['l']
-            self.dz *= self.uni.uni['l']
             self.dx1d *= self.uni.uni['l']
             self.dy1d *= self.uni.uni['l']
             self.dz1d *= self.uni.uni['l']
-
             self.dxidxup /= self.uni.uni['l']
             self.dxidxdn /= self.uni.uni['l']
             self.dyidyup /= self.uni.uni['l']
@@ -1022,10 +1025,6 @@ class BifrostData(Plottable3D):
 
         '''
 
-        self.trans2commaxes()
-
-        self.sel_units = 'cgs'
-
         sign = 1.0
         if varname[-1] in ['x', 'y', 'z']:
             varname = varname+'c'
@@ -1034,9 +1033,11 @@ class BifrostData(Plottable3D):
 
         var = self.get_var(varname, snap=snap, *args, **kwargs)
         var = sign * var
-
         var = var[..., ::-1].copy()
 
+        self.trans2commaxes()
+        self.sel_units = 'cgs'
+        
         return var
 
     def trans2commaxes(self):
@@ -1048,13 +1049,13 @@ class BifrostData(Plottable3D):
                 cte = self.uni.u_l  # not sure if this works, u_l seems to be 1.e8
             self.x = self.x*cte
             self.dx = self.dx*cte
-            self.dx1d = self.dx1d/cte
+            self.dx1d = self.dx1d*cte
             self.y = self.y*cte
             self.dy = self.dy*cte
-            self.dy1d = self.dy1d/cte
+            self.dy1d = self.dy1d*cte
             self.z = - self.z[::-1].copy()*cte
             self.dz = self.dz1d[::-1].copy()*cte
-            self.dz1d = self.dz1d[::-1].copy()/cte
+            self.dz1d = self.dz1d[::-1].copy()*cte
 
     def trans2noncommaxes(self):
 

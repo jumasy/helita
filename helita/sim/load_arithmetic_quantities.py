@@ -35,8 +35,10 @@ from . import document_vars, tools
 
 try:
     from . import stagger
-except ImportError:
-    stagger = tools.ImportFailed('stagger')
+except ImportError as err:
+    stagger = tools.ImportFailed('stagger', err=err)
+    # even though this is an "internal" module, if it fails to import for some reason,
+    # user may still use load_arithemtic_quantities sometimes (when do_stagger=False).
 
 # import external public modules
 import numpy as np
@@ -240,7 +242,7 @@ def get_deriv(obj, quant):
 
 
 # default
-_CENTER_QUANT = ('CENTER_QUANT', [x+'c' for x in AXES] + ['_center'])
+_CENTER_QUANT = ('CENTER_QUANT', [x+'c' for x in AXES] + ['_center'] + [x+'ce' for x in AXES])
 # get value
 
 
@@ -250,16 +252,28 @@ def get_center(obj, quant, *args, **kwargs):
     '''
     if quant == '':
         docvar = document_vars.vars_documenter(obj, *_CENTER_QUANT, get_center.__doc__, uni=UNI.quant_child(0))
+        for x in AXES:
+            docvar(f'{x}c', f'{x}-component, centered. E.g. b{x}c --> b{x}, centered.' +
+                            "If mesh_location_tracking enabled, use that to determine interpolations; else " +
+                            "if 'i', 'e', 'j', or 'ef', assume original value is edge-centered, " +
+                            "else assume original value is face-centered.")
         docvar('_center', 'quant_center brings quant to center via interpolation. Requires mesh_location_tracking to be enabled')
+        for x in AXES:
+            docvar(f'{x}ce', f'{x}-component, centered, assuming original value is edge-centered.' + 
+                            'E.g. ef{x}ce --> ef{x}, centered.')
+
         return None
 
-    getq = quant[-2:]  # the quant we are "getting" by this function. E.g. 'xc'.
-
-    if getq in _CENTER_QUANT[1]:
+    if quant[-2:] in ('xc', 'yc', 'zc'):
+        getq = quant[-2:]  # the quant we are "getting" by this function. E.g. 'xc'.
         q = quant[:-1]  # base variable, including axis. E.g. 'efx'.
     elif quant.endswith('_center'):
         assert getattr(obj, mesh_location_tracking, False), "mesh location tracking is required for this to be enabled"
+        getq = '_center'
         q = quant[:-len('_center')]
+    elif quant[-3:] in ('xce', 'yce', 'zce'):
+        getq = quant[-3:]  # the quant we are "getting" by this function. E.g. 'xce'.
+        q = quant[:-2]  # base variable, including axis. E.g. 'efx'.
     else:
         return None
 
@@ -275,13 +289,13 @@ def get_center(obj, quant, *args, **kwargs):
         if len(transf) == 0:
             warnings.warn(f'called get_center on an already-centered variable: {q}')
     else:                               # << not using mesh_location_tracking >>
-        axis = quant[-2]
-        qvec = q[:-1]      # base variable, without axis. E.g. 'ef'.
-        if qvec in ['i', 'e', 'j', 'ef']:     # edge-centered variable. efx is at (0, -0.5, -0.5)
-            AXIS_TRANSFORM = {'x': ['yup', 'zup'],
+        qvec, axis = q[:-1], q[-1]   # E.g. 'ef', 'x'
+        EDGE_CENTERED_VARS = ['i', 'e', 'j', 'ef']
+        if getq.endswith('ce') or qvec in EDGE_CENTERED_VARS:
+            AXIS_TRANSFORM = {'x': ['yup', 'zup'],   # e.g., efx is at (0, -0.5, -0.5)
                               'y': ['xup', 'zup'],
                               'z': ['xup', 'yup']}
-        else:
+        else:  # face-centered var.
             AXIS_TRANSFORM = {'x': ['xup'],
                               'y': ['yup'],
                               'z': ['zup']}
@@ -343,7 +357,7 @@ def get_interp(obj, quant):
 
 
 # default
-_MODULE_QUANT = ('MODULE_QUANT', ['mod', 'h', '_mod'])
+_MODULE_QUANT = ('MODULE_QUANT', ['mod', 'h', '_mod', '_modce'])
 # get value
 
 
@@ -353,9 +367,10 @@ def get_module(obj, quant):
     '''
     if quant == '':
         docvar = document_vars.vars_documenter(obj, *_MODULE_QUANT, get_module.__doc__, uni=UNI.quant_child(0))
-        docvar('mod',  'starting with mod computes the module of the vector [simu units]. sqrt(vx^2 + vy^2 + vz^2).')
-        docvar('_mod', 'ending with mod computes the module of the vector [simu units]. sqrt(vx^2 + vy^2 + vz^2). ' +
+        docvar('mod',  'starting with mod computes the module of the vector [simu units]. sqrt(vxc^2 + vyc^2 + vzc^2).')
+        docvar('_mod', 'ending with _mod computes the module of the vector [simu units]. sqrt(vxc^2 + vyc^2 + vzc^2). ' +
                        "This is an alias for starting with mod. E.g. 'modb' and 'b_mod' mean the same thing.")
+        docvar('_modce', 'var_modce --> sqrt(varxce^2 + varyce^2 + varzce^2). Use for edge-centered var.')
         docvar('h',  'ending with h computes the horizontal component of the vector [simu units]. sqrt(vx^2 + vy^2).')
         return None
 
@@ -366,6 +381,9 @@ def get_module(obj, quant):
     elif quant.endswith('_mod'):
         getq = 'mod'
         q = quant[: -len('_mod')]
+    elif quant.endswith('_modce'):
+        getq = '_modce'
+        q = quant[: -len('_modce')]
     elif quant.endswith('h'):
         getq = 'h'
         q = quant[: -len('h')]
@@ -375,11 +393,16 @@ def get_module(obj, quant):
     # tell obj the quant we are getting by this function.
     document_vars.setattr_quant_selected(obj, getq, _MODULE_QUANT[0], delay=True)
 
-    # actually get the quant:
-    result = obj.get_var(q + 'xc') ** 2
-    result += obj.get_var(q + 'yc') ** 2
-    if getq == 'mod':
-        result += obj.get_var(q + 'zc') ** 2
+    if getq == '_modce':
+        result = obj(q + 'xce') ** 2
+        result = result + obj(q + 'yce') ** 2   # avoids += to avoid editing original array.
+        result = result + obj(q + 'zce') ** 2
+    else:
+        # actually get the quant:
+        result = obj.get_var(q + 'xc') ** 2
+        result += obj.get_var(q + 'yc') ** 2
+        if getq == 'mod':
+            result += obj.get_var(q + 'zc') ** 2
 
     return np.sqrt(result)
 
@@ -1245,7 +1268,7 @@ def get_fft_quant(obj, quant):
 _MULTI_QUANT = ('MULTI_QUANT',
                 [fullcommand + c
                  for command in ('vec', 'vecxyz', 'vecxy', 'vecyz', 'vecxz')
-                 for c in ('', 'c')
+                 for c in ('', 'c', 'ce')
                  for fullcommand in ('_'+command, command+'_')]
                 )
 # get value
@@ -1278,13 +1301,16 @@ def get_multi_quant(obj, quant):
         fullcommand = command + '_'
         if fullcommand not in _MULTI_QUANT[1]:
             return None
-    if command[-1]=='c' and command != 'vec':  # e.g. 'vecc', or 'vecxyc'
+    if command[-2:]=='ce':
+        c = 'ce'
+        command = command[:-2]
+    elif command[-1]=='c' and command != 'vec':  # e.g. 'vecc', or 'vecxyc'
         c = 'c'
         command = command[:-1]
     else:
         c = ''
     # now we have assigned:
-    #  c = 'c' if command implies vars should be centered (like "varyc") else ''
+    #  c = 'c' (or 'ce') if command implies vars should be centered (like "varyc") else ''
     #  command = command without underscore, and without 'c'. e.g. 'vec'
     #  fullcommand = command with underscore. e.g. '_vec' or 'vec_'
     #  var = quant without command.
