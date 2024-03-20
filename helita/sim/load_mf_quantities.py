@@ -450,7 +450,7 @@ def get_onefluid_var(obj, var, ONEFLUID_QUANT=None):
         if obj.mf_ispecies < 0:  # electrons
             return obj.get_var('nre')
         else:                   # not electrons
-            mass = obj.get_mass(obj.mf_ispecies, units='simu')  # [simu. mass units]
+            mass = obj.get_mass(obj.ifluid, units='simu')  # [simu. mass units]
             return obj.get_var('r') / mass   # [simu number density units]
 
     elif var == 'nq':
@@ -479,14 +479,14 @@ def get_onefluid_var(obj, var, ONEFLUID_QUANT=None):
 
     elif var == 'vtherm':
         Ti = obj.get_var('tg')                           # [K]
-        mi = obj.get_mass(obj.mf_ispecies, units='si')   # [kg]
+        mi = obj.get_mass(obj.ifluid, units='si')   # [kg]
         vtherm = np.sqrt(obj.uni.ksi_b * Ti / mi)            # [m / s]
         consts = np.sqrt(8 / np.pi)
         return consts * vtherm / obj.uni.usi_u                   # [simu. velocity units]
 
     elif var == 'vtherm_simple':
         Ti = obj('tg')                                   # [K]
-        mi = obj.get_mass(obj.mf_ispecies, units='si')   # [kg]
+        mi = obj.get_mass(obj.ifluid, units='si')   # [kg]
         vtherm = np.sqrt(obj.uni.ksi_b * Ti / mi)            # [m / s]
         return vtherm / obj.uni.usi_u                   # [simu. velocity units]
 
@@ -1081,8 +1081,8 @@ def get_heating_quant(obj, var, HEATING_QUANT=None):
         if heating_is_off() or obj.i_j_same_fluid():
             return obj.zero_at_mesh_center()
         ni = obj.get_var('nr')             # [simu. units]
-        mi = obj.get_mass(obj.mf_ispecies)  # [amu]
-        mj = obj.get_mass(obj.mf_jspecies)  # [amu]
+        mi = obj.get_mass(obj.ifluid)  # [amu]
+        mj = obj.get_mass(obj.jfluid)  # [amu]
         nu_ij = obj.get_var('nu_ij')       # [simu. units]
         coeff = (mi / (mi + mj)) * ni * nu_ij   # [simu units: length^-3 time^-1]
         return coeff
@@ -1092,7 +1092,7 @@ def get_heating_quant(obj, var, HEATING_QUANT=None):
             return obj.zero_at_mesh_center()
         coeff = obj.get_var('qcol_coeffj')
         if var == 'qcol_uj':
-            mj_simu = obj.get_mass(obj.mf_jspecies, units='simu')  # [simu mass]
+            mj_simu = obj.get_mass(obj.jfluid, units='simu')  # [simu mass]
             energy = mj_simu * obj.get_var('uid2')        # [simu energy]
         elif var == 'qcol_tgj':
             simu_kB = obj.uni.ksi_b * (obj.uni.usi_nr / obj.uni.usi_e)   # kB [simu energy / K]
@@ -1449,12 +1449,12 @@ def get_mf_colf(obj, var, COLFRE_QUANT=None):
             jSL = obj.jfluid
             # get ifluid info
             tgi = obj.get_var('tg', ifluid=iSL)      # [K]
-            m_i = obj.get_mass(iSL[0])               # [amu]
+            m_i = obj.get_mass(iSL)               # [amu]
             # get jfluid info, then restore original iSL & jSL
             with obj.MaintainFluids():
                 n_j = obj.get_var('nr', ifluid=jSL) * obj.uni.u_nr  # [cm^-3]
                 tgj = obj.get_var('tg', ifluid=jSL)                # [K]
-                m_j = obj.get_mass(jSL[0])                         # [amu]
+                m_j = obj.get_mass(jSL)                         # [amu]
 
             # compute some values:
             m_jfrac = m_j / (m_i + m_j)                      # [(dimensionless)]
@@ -1492,8 +1492,8 @@ def get_mf_colf(obj, var, COLFRE_QUANT=None):
         # get variables.
         with obj.MaintainFluids():
             n_j = obj.get_var('nr', ifluid=obj.jfluid) * obj.uni.usi_nr  # number density [m^-3]
-        m_i = obj.get_mass(obj.mf_ispecies)  # mass [amu]
-        m_j = obj.get_mass(obj.mf_jspecies)  # mass [amu]
+        m_i = obj.get_mass(obj.ifluid)  # mass [amu]
+        m_j = obj.get_mass(obj.jfluid)  # mass [amu]
         # calculate & return nu_ij_test:
         return CONST_MULT * n_j * np.sqrt(CONST_RATIO * m_j / (m_i * (m_i + m_j))) / obj.uni.usi_hz
 
@@ -1545,7 +1545,7 @@ def get_mf_colf(obj, var, COLFRE_QUANT=None):
         ldebye = obj.get_var('ldebye') * obj.uni.usi_l
         me = obj.uni.msi_e
         tg = obj.get_var('tg')
-        ms = obj.get_mass(obj.mf_ispecies, units='si')
+        ms = obj.get_mass(obj.ifluid, units='si')
         eps0 = obj.uni.permsi
         kb = obj.uni.ksi_b
         qe = obj.uni.qsi_electron
@@ -1578,12 +1578,12 @@ def get_mf_colf(obj, var, COLFRE_QUANT=None):
 
         # get ifluid info
         tgi = obj.get_var('tg', ifluid=iSL)      # [K]
-        m_i = obj.get_mass(iSL[0])  # [amu]
+        m_i = obj.get_mass(iSL)  # [amu]
         # get jfluid info, then restore original iSL & jSL
         with obj.MaintainFluids():
             n_j = obj.get_var('nr', ifluid=jSL) * obj.uni.usi_nr  # [m^-3]
             tgj = obj.get_var('tg', ifluid=jSL)                # [K]
-            m_j = obj.get_mass(jSL[0])            # [amu]
+            m_j = obj.get_mass(jSL)            # [amu]
 
         # compute some values:
         m_jfrac = m_j / (m_i + m_j)                      # [(dimensionless)]
@@ -1611,8 +1611,8 @@ def get_mf_colf(obj, var, COLFRE_QUANT=None):
         return mi_ni / mj_nj
 
     elif var == "c_tot_per_vol":
-        m_i = obj.get_mass(obj.mf_ispecies)   # [amu]
-        m_j = obj.get_mass(obj.mf_jspecies)   # [amu]
+        m_i = obj.get_mass(obj.ifluid)   # [amu]
+        m_j = obj.get_mass(obj.jfluid)   # [amu]
         return obj.get_var("nr", ifluid=obj.jfluid) * obj.get_var("nu_ij") / (m_j / (m_i + m_j))
 
     elif var == "1dcolslope":
@@ -1687,8 +1687,8 @@ def get_mf_cross(obj, var, CROSTAB_QUANT=None):
 
     # get masses & temperatures, then restore original obj.ifluid and obj.jfluid values.
     with obj.MaintainFluids():
-        m_i = obj.get_mass(obj.mf_ispecies)
-        m_j = obj.get_mass(obj.mf_jspecies)
+        m_i = obj.get_mass(obj.ifluid)
+        m_j = obj.get_mass(obj.jfluid)
         tgi = obj.get_var('tg', ifluid=obj.ifluid)
         tgj = obj.get_var('tg', ifluid=obj.jfluid)
 
@@ -1977,7 +1977,7 @@ def get_mf_plasmaparam(obj, quant, PLASMA_QUANT=None):
     elif quant == 'sgyrof':
         B = obj.get_var('modb')                       # magnitude of B [simu. B-field units]
         q = obj.get_charge(obj.ifluid, units='simu')  # [simu. charge units]
-        m = obj.get_mass(obj.mf_ispecies, units='simu')  # [simu. mass units]
+        m = obj.get_mass(obj.ifluid, units='simu')  # [simu. mass units]
         return q * B / m
 
     elif quant == 'gyrof':
@@ -2558,7 +2558,7 @@ def get_thermal_instab_quant(obj, quant, THERMAL_INSTAB_QUANT=None):
         gyroi = obj.get_var('gyrof')
         with obj.MaintainFluids():
             nu_en = obj.get_var('nu_sn', iS=-1)
-        m_n = obj.get_mass(obj.mf_jspecies, units='amu')
+        m_n = obj.get_mass(obj.ifluid, units='amu')
         m_e = obj.get_mass(-1, units='amu')
         delta_en = 2 * m_e / (m_e + m_n)
         V02 = obj.get_var('thermal_v02')  # V0^2
