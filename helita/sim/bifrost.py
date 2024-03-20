@@ -323,6 +323,7 @@ class BifrostData(Plottable3D):
             self.snapvars += ['bx', 'by', 'bz']
         self.hionvars = []
         self.heliumvars = []
+        self.ooevars = []
         if self.get_param('do_hion', default=0) > 0:
             self.hionvars = ['hionne', 'hiontg', 'n1',
                              'n2', 'n3', 'n4', 'n5', 'n6', 'nh2']
@@ -330,9 +331,24 @@ class BifrostData(Plottable3D):
         if self.get_param('do_helium', default=0) > 0:
             self.heliumvars = ['nhe1', 'nhe2', 'nhe3']
             self.heion = True
+        if self.get_param('do_out_of_eq', default=0) > 0:
+            with open(self.get_param('atomfl').strip(' ')) as f:
+                lines = f.readlines()
+            nr = 0
+            for lnr in range(len(lines)):
+                 if lines[lnr].strip(' ')[0] != '*':
+                     nr += 1
+                     if nr == 1:
+                         ion = lines[lnr].strip(' ').strip('\n').lower()
+                     elif nr == 3:
+                         nk = int(lines[lnr].strip(' ').split(' ')[0])
+                         break
+            for k in range(nk):
+                self.ooevars.append(ion+f"{k+1}")
+            self.ooeion = ion
         self.compvars = ['ux', 'uy', 'uz', 's', 'ee']
         self.simple_vars = self.snapvars + self.auxvars + self.hionvars + \
-            self.heliumvars
+            self.heliumvars + self.ooevars
         self.auxxyvars = []
         # special case for the ixy1 variable, lives in a separate file
         if 'ixy1' in self.auxvars:
