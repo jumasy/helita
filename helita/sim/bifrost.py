@@ -11,6 +11,7 @@ import warnings
 import functools
 import collections
 from glob import glob
+import re
 
 # import external public modules
 import numpy as np
@@ -1009,15 +1010,15 @@ class BifrostData(Plottable3D):
         is:
 
           - for 3D atmospheres:  the vertical axis
-          - for loop type atmospheres: along the loop
+          - for loop-type atmospheres: along the loop
           - for 1D atmosphere: the unique dimension is the 3rd axis.
-          At least one extra dimension needs to be created artifically.
+          At least one extra dimension needs to be created artificially.
 
-        All of them should obey the right hand rule
+        All of them should obey the right-hand rule
 
-        In all of them, the vectors (velocity, magnetic field etc) away from the Sun.
+        In all of them, the vectors (velocity, magnetic field, etc) are away from the Sun.
 
-        If applies, z=0 near the photosphere.
+        If this applies, z=0 near the photosphere.
 
         Units: everything is in cgs.
 
@@ -1163,7 +1164,24 @@ class BifrostData(Plottable3D):
                 elif isnap == 0:
                     filename = filename + '.helium.snap'
                 elif isnap > 0:
-                    filename = '%s.helium_%s.snap' % (self.file_root, isnap)
+                    filename = '%s.helium_%s.snap' % (self.file_root, isnap)                  
+        elif var in self.ooevars: #is OOEVar
+            idx = int(var.strip(self.ooeion))-1
+            fsuffix = '.ooe'
+            filename = self.file_root + fsuffix
+            if panic:
+                fsuffix_a = '.panic'
+            else:
+                fsuffix_a = '.snap'
+            isnap = self.get_param('isnap', error_prop=True)
+            if isnap <= -1:
+                    filename = filename + fsuffix_a+'.scr'
+            elif isnap == 0:
+                    filename = filename + fsuffix_a
+            elif isnap > 0:
+                    filename = filename+f'_{isnap:03d}'+fsuffix_a
+            if os.stat(filename).st_size < self.nx*self.ny*self.nz*(idx+1)*4:
+                raise ValueError('OOEVar level out of range.')
         else:
             raise ValueError(('_get_simple_var: could not find variable '
                               '%s. Available variables:' % (var) +
@@ -1205,6 +1223,10 @@ class BifrostData(Plottable3D):
         new code should instead use the function from load_fromfile_quantitites.
         '''
         return load_fromfile_quantities._get_composite_var(self, *args, **kwargs)
+            
+    def get_ooevar(self,level,slice=None):
+        ''' Gets ion data. level is the ionization level number'''
+        return self.trans2comm(self.ooeion + str(level+1))
 
     def get_electron_density(self, sx=slice(None), sy=slice(None), sz=slice(None)):
         """
