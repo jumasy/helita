@@ -453,19 +453,14 @@ def get_mass(obj, specie=None, units='amu'):
     if specie is None, use specie = obj.mf_ispecies
     '''
     if specie is None:
-        specie = obj.iSL
+        specie = obj.iS
     # if specie is actually (spec, level) return get_mass(obj, spec) instead.
     try:
-        charge = obj.get_charge(specie)
         specie = next(iter(specie))
     except TypeError:
-        charge = 0
         pass
     else:
-        if specie < 0: 
-            return get_mass(obj, specie, units=units)
-        else: 
-            return get_mass(obj, specie, units=units) - charge * get_mass(obj, -1, units=units)
+        return get_mass(obj, specie, units=units)
 
     units = units.lower()
     VALID_UNITS = ['amu', 'g', 'kg', 'cgs', 'si', 'simu']
@@ -482,7 +477,7 @@ def get_mass(obj, specie=None, units='amu'):
             return obj.uni.simu_m_e
     else:
         # not electron
-        m_amu = obj.att[specie].params.atomic_weight - charge * obj.uni.m_electron / obj.uni.amu
+        m_amu = obj.att[specie].params.atomic_weight
         if units == 'amu':
             return m_amu
         elif units in ['g', 'cgs']:
