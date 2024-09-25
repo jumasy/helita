@@ -1063,7 +1063,7 @@ def get_ponderomotive(obj, quant, POND_QUANT=None, **kwargs):
     uby = obj.get_var('uxc')*bzc - obj.get_var('uzc')*bxc
     ubz = obj.get_var('uxc')*byc - obj.get_var('uyc')*bxc
 
-    xl, yl, zl = calc_field_lines(obj.x[::2], obj.y, obj.z[::2], bxc[::2, :, ::2], byc[::2, :, ::2], bzc[::2, :, ::2], niter=501)
+    #xl, yl, zl = calc_field_lines(obj.x[::2], obj.y, obj.z[::2], bxc[::2, :, ::2], byc[::2, :, ::2], bzc[::2, :, ::2], niter=501)
     #S = calc_lenghth_lines(xl, yl, zl)
     ixc = obj.get_var('ixc')
     iyc = obj.get_var('iyc')
