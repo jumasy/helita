@@ -560,7 +560,9 @@ def get_cross_tab(obj, iSL=None, jSL=None, **kw__fluids):
     # if we reach this line, we couldn't find cross section file, so make the code crash.
     errmsg = "Couldn't find cross section file for ifluid={}, jfluid={}. ".format(iSL, jSL) + \
              "(We looked in obj.mf_{}tabparam['{}'].)".format(('e' if jSL[0] < 0 else ''), CTK)
-    raise ValueError(errmsg)
+    warnings.warn(errmsg)
+    return None
+
 
 
 @register_as_multifluid_func
@@ -571,6 +573,8 @@ def get_cross_sect(obj, **kw__fluids):
     common use-case:
     obj.get_cross_sect().tab_interp(tg_array)
     '''
+    if obj.get_cross_tab(**kw__fluids) is None: 
+         return None
     return obj.cross_sect([obj.get_cross_tab(**kw__fluids)])
 
 
