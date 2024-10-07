@@ -1714,8 +1714,8 @@ def get_mf_cross(obj, var, CROSTAB_QUANT=None):
             if crossobj is None: 
                 cross = np.zeros_like(tg)
             else: 
-            crossunits = crossobj.cross_tab[0]['crossunits']
-            cross = crossunits * crossobj.tab_interp(tg)
+                crossunits = crossobj.cross_tab[0]['crossunits']
+                cross = crossunits * crossobj.tab_interp(tg)
 
         return cross
 
