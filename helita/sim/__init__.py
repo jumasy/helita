@@ -3,34 +3,6 @@ Set of tools to interface with output and input from simulations
 and radiative transfer codes. Also includes routines for working
 with synthetic spectra.
 """
-
-try:
-    found = True
-except ImportError:
-    found = False
-
-
-try:
-    PYCUDA_INSTALLED = True
-except ImportError:
-    PYCUDA_INSTALLED = False
-
-
-if found:
-    __all__ = ["bifrost", "multi", "multi3d", "muram", "rh", "rh15d",
-               "simtools", "synobs", "ebysus", "cipmocct", "laresav",
-               "pypluto", "matsumotosav"]
-else:
-    __all__ = ["bifrost", "multi", "multi3d", "muram", "rh", "rh15d",
-               "simtools", "synobs"]
-
-
-from . import bifrost, multi, rh
-
-if found:
-    from . import muram
-
-
 from .tools import (
     # defaults
     IMPORT_FAILURE_WARNINGS,
@@ -70,17 +42,12 @@ from .tools import (
 )
 
 # try importing all the modules inside helita.sim
-_modules = ['aux_compare', 'bifrost', 'cipmocct', 'document_vars',
+_modules = ['aux_compare', 'bifrost', 'document_vars',
             'ebysus', 'fake_ebysus_data',
             'file_memory', 'fluid_tools',
-            'laresav',
             'load_arithmetic_quantities', 'load_fromfile_quantities',
             'load_noeos_quantities', 'load_quantities',
-            'mah', 'matsumotosav',
-            'multi', 'multi3d',
-            'muram',
-            'preft', 'pypluto', 'radyn', 'rh', 'rh15d',
-            'simtools', 'stagger', 'synobs', 'units',
+            'stagger', 'units',
             ]
 _locals = locals()
 _globals = globals()

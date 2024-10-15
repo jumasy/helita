@@ -1,9 +1,25 @@
-[build-system]
-requires = [
-         "cython",
-         "oldest-supported-numpy",
-         "setuptools_scm[toml]",
-         "setuptools",
-         "wheel",
-         ]
-build-backend = 'setuptools.build_meta'
+[project]
+name = 'helita_lite'
+version = '0.1.0'
+authors = [
+    {name = 'Tiago M. D. Pereira', email = 'tiago.pereira@astro.uio.no'},
+    {name = 'Sam Evans', email = 'sevans7@bu.edu'},
+    {name = 'and others...'}
+]
+license = {text = 'BSD 3-Clause'}
+requires-python = '>=3.8'
+
+dependencies = [
+    'astropy',
+    'matplotlib',
+    'numba',
+    'numpy',
+    'scipy',
+]
+
+[project.optional-dependencies]
+ebysus = ['zarr']
+tests = ['pytest']
+
+[project.urls]
+source-code = "https://ita-solar.github.io/helita/"
