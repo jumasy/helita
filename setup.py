@@ -5,9 +5,7 @@ from itertools import chain
 
 import numpy
 from Cython.Build import cythonize
-from numpy.distutils import fcompiler
-from numpy.distutils.core import setup
-from numpy.distutils.extension import Extension
+from setuptools.extension import Extension
 
 try:
     # Recommended for setuptools 61.0.0+
@@ -35,6 +33,11 @@ extras['all'] = list(chain.from_iterable(ex_extras.values()))
 ################################################################################
 NUMPY_INC = numpy.get_include()
 EXT_PACKAGES = {
+    #"anapyio": ["io", [NUMPY_INC, os.path.join("helita", "io/src")],
+    #            [os.path.join("helita", "io/anapyio.pyx"),
+    #             os.path.join("helita", "io/src/libf0.c"),
+    #             os.path.join("helita", "io/src/anacompress.c"),
+    #             os.path.join("helita", "io/src/anadecompress.c")]],
     "radtrans": ["utils", [NUMPY_INC],
                  [os.path.join("helita", "utils/radtrans.pyx")]],
     "utilsfast": ["utils", [NUMPY_INC],
