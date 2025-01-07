@@ -151,6 +151,11 @@ class MuramAtmos:
             self.pressure = np.memmap(file_press, mode="r", shape=ashape,
                                       dtype=self.dtype,
                                       order="F")
+        file_ne = "%s/eosne%s" % (fdir, template)
+        if os.path.isfile(file_ne):
+            self.ne = np.memmap(file_ne, mode="r", shape=ashape,
+                                      dtype=self.dtype,
+                                      order="F")
         file_rho = "%s/result_prim_0%s" % (fdir, template)
         if os.path.isfile(file_rho):
             self.rho = np.memmap(file_rho, mode="r", shape=ashape,
