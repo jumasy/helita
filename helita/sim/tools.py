@@ -247,7 +247,7 @@ def globalvars(obj, abundance="sun_photospheric_2015_scott"):
 
     ionInfo = chio.masterListInfo()
     for ii in obj.atomdic.keys():
-        ions = ch.ion(ii+'_2', setup=False,abundance=abundance)
+        ions = ch.ion(ii+'_2', temperature=1e6, eDensity=1e9 , abundance=abundance)
         obj.abnddic[ii] = 12 + np.log10(ions.Abundance)
 
     obj.weightdic = {'h': 1.008, 'he': 4.003, 'c': 12.01, 'n': 14.01,
