@@ -1505,7 +1505,7 @@ class BifrostData(Plottable3D):
             snap = kw__get_var.pop('snaps', None)  # look for 'snaps' kwarg
             if snap is None:
                 snap = self.snap
-        snap = np.array(snap, copy=False)
+        snap = np.asarray(snap) #, copy=False)
         if len(snap.shape) == 0:
             raise ValueError('Expected snap to be list (in get_varTime) but got snap={}'.format(snap))
         if not np.array_equal(snap, self.snap):
