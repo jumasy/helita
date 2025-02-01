@@ -1697,7 +1697,7 @@ def write_mfe(rootname, inputdata, mf_ispecies=None, mf_ilevel=None, **kw_ifluid
 
 
 def write_mf_common(rootname, inputdatax, inputdatay, inputdataz, inputdatae=None):
-    '''write common (?? what is this ??). (Useful when using python to make initial snapshot; e.g. in make_mf_snap.py)
+    '''write common. (Useful when using  python to make initial snapshot; e.g. in make_mf_snap.py)
     rootname = snapname (should be set equal to the value of parameter 'snapname' in mhd.in)
     inputdata = arrays of shape (nx, ny, nz)
         data for common.
@@ -1709,7 +1709,7 @@ def write_mf_common(rootname, inputdatax, inputdatay, inputdataz, inputdatae=Non
     nx, ny, nz = inputdatax.shape
     if not os.path.exists(directory):
         os.makedirs(directory)
-    if np.any(inputdatae) == None:
+    if inputdatae is None:
         data = np.memmap(directory+'/%s_mf_common.snap' % (rootname), dtype='float32', mode='w+', order='f', shape=(nx, ny, nz, 3))
         data[..., 0] = inputdatax
         data[..., 1] = inputdatay
