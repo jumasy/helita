@@ -443,7 +443,7 @@ def get_fluid_name(obj, fluid=None):
 
 
 @register_as_multifluid_func
-def get_mass(obj, specie=None, units='amu'):
+def get_mass(obj, SL=None, units='amu'):
     '''return specie's mass [units]. default units is amu.
     units: one of: ['amu', 'g', 'kg', 'cgs', 'si', 'simu']. Default 'amu'
         'amu'        -> mass in amu.    For these units, mH ~= 1
@@ -452,15 +452,13 @@ def get_mass(obj, specie=None, units='amu'):
         'simu'       -> mass in simulation units.
     if specie is None, use specie = obj.mf_ispecies
     '''
-    if specie is None:
-        specie = obj.iS
+    if SL is None:
+        SL = obj.iSL
     # if specie is actually (spec, level) return get_mass(obj, spec) instead.
     try:
-        specie = next(iter(specie))
+        specie, level = SL
     except TypeError:
-        pass
-    else:
-        return get_mass(obj, specie, units=units)
+        specie, level = SL, None
 
     units = units.lower()
     VALID_UNITS = ['amu', 'g', 'kg', 'cgs', 'si', 'simu']
@@ -478,6 +476,10 @@ def get_mass(obj, specie=None, units='amu'):
     else:
         # not electron
         m_amu = obj.att[specie].params.atomic_weight
+        if level is None:
+            raise NotImplementedError("mass of non-electron when level=None!")
+        charge_lost_mass_amu = (obj.uni.m_electron / obj.uni.amu) * (level-1)
+        m_amu = m_amu - charge_lost_mass_amu
         if units == 'amu':
             return m_amu
         elif units in ['g', 'cgs']:
@@ -486,7 +488,6 @@ def get_mass(obj, specie=None, units='amu'):
             return m_amu * obj.uni.amusi
         else:  # units == 'simu'
             return m_amu * obj.uni.simu_amu
-
 
 @register_as_multifluid_func
 def get_charge(obj, SL=None, units='e'):
