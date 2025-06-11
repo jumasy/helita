@@ -38,10 +38,10 @@ EXT_PACKAGES = {
     #             os.path.join("helita", "io/src/libf0.c"),
     #             os.path.join("helita", "io/src/anacompress.c"),
     #             os.path.join("helita", "io/src/anadecompress.c")]],
-    "radtrans": ["utils", [NUMPY_INC],
-                 [os.path.join("helita", "utils/radtrans.pyx")]],
-    "utilsfast": ["utils", [NUMPY_INC],
-                  [os.path.join("helita", "utils/utilsfast.pyx")]]
+    #"radtrans": ["utils", [NUMPY_INC],
+    #             [os.path.join("helita", "utils/radtrans.pyx")]],
+    #"utilsfast": ["utils", [NUMPY_INC],
+    #              [os.path.join("helita", "utils/utilsfast.pyx")]]
 }
 extensions = [
     Extension(
